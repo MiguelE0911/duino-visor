@@ -57,10 +57,14 @@ class _Var:
         self._cb.append(lambda: cb())
 
 
+MODULOS_UI = ("gui", "grafica", "widgets", "tema", "vista_placa")
+
+
 @pytest.fixture
-def gui(monkeypatch):
+def gui(monkeypatch, tmp_path):
+    monkeypatch.setenv("DUINOVISOR_AJUSTES", str(tmp_path / "ajustes.json"))
     tk = types.ModuleType("tkinter")
-    for nombre in ("Tk", "Canvas", "Scale", "Text", "Frame", "Label", "Entry"):
+    for nombre in ("Tk", "Canvas", "Scale", "Text", "Frame", "Label", "Entry", "Menu", "Toplevel"):
         setattr(tk, nombre, type(nombre, (_Widget,), {}))
     tk.StringVar = tk.IntVar = tk.BooleanVar = _Var
     tk.TclError = Exception
@@ -79,14 +83,14 @@ def gui(monkeypatch):
     for nombre, mod in (("tkinter", tk), ("tkinter.ttk", ttk), ("tkinter.messagebox", mb),
                         ("tkinter.filedialog", fd), ("tkinter.font", fnt)):
         monkeypatch.setitem(sys.modules, nombre, mod)
-    for nombre in ("gui", "grafica", "widgets", "tema"):
+    for nombre in MODULOS_UI:
         monkeypatch.delitem(sys.modules, nombre, raising=False)
     import gui as g
     app = g.App(demo=True)
     app.avisos, app.fd = avisos, fd
     yield app
     app.enlace.cerrar()
-    for nombre in ("gui", "grafica", "widgets", "tema"):
+    for nombre in MODULOS_UI:
         sys.modules.pop(nombre, None)
 
 
@@ -300,3 +304,58 @@ def test_cambiar_de_vista_no_pierde_la_configuracion(gui):
     app.mostrar_vista("semaforo")
     assert app.paneles["R"].v_modo.get() == "ON"
     assert set(app.vistas) == {"semaforo", "clima"}
+
+
+# ------------------------------------------------------------------ interfaz nueva (luces, ritmos, tema)
+def test_elegir_led_cambia_el_editor(gui):
+    assert gui.v_sel.get() == "R" and gui.led_editor is gui.paneles["R"]
+    gui.semaforo.al_elegir("G")                                          # clic en una luz del semáforo
+    assert gui.led_editor is gui.paneles["G"] and gui.v_titulo_editor.get() == "Luz verde"
+    gui.protoboard.al_elegir("Y")                                        # clic en un LED de la protoboard
+    assert gui.led_editor is gui.paneles["Y"]
+    gui.chips["R"].comando()                                             # clic en un chip
+    assert gui.led_editor is gui.paneles["R"] and gui.chips["R"].seleccionado
+
+
+def test_ritmos_escriben_los_milisegundos(gui):
+    led = gui.paneles["R"]
+    led.v_modo.set("BLINK")
+    assert led.v_ritmo.get() == "normal"                                 # 500/500 por defecto
+    led.v_ritmo.set("rapido")
+    assert (led.v_on.get(), led.v_off.get()) == ("200", "200")
+    led.v_on.set("350")                                                  # a medida desde los detalles
+    assert led.v_ritmo.get() == "" and "a medida" in led.resumen()
+    led.v_modo.set("FADE")
+    led.v_ritmo.set("lento")
+    assert led.v_periodo.get() == "4000" and led.obtener().periodo_ms == 4000
+    enviar_y_esperar(gui, gui.aplicar)
+    assert gui.sim.leds["R"]["modo"] == "FADE"
+
+
+def test_animacion_bloquea_el_editor_y_se_puede_detener(gui):
+    gui.v_seq.set("ALERTA")
+    enviar_y_esperar(gui, gui.alternar_secuencia)
+    assert not gui.paneles["R"].habilitado and gui._bloqueo_editor
+    assert gui.chips["R"].resumen == "Automático"
+    gui._desbloquear()                                                   # botón «Detener animación»
+    assert esperar(gui, lambda: terminado(gui))
+    assert gui.aplicado.seq is None and gui.paneles["R"].habilitado
+
+
+def test_cambiar_tema_conserva_todo(gui):
+    import preferencias
+    import tema as T
+    gui.paneles["G"].v_modo.set("ON")
+    enviar_y_esperar(gui, gui.aplicar)
+    gui.grafica.agregar(24.0, 50.0)
+    gui.log("línea de prueba")
+    aplicado = gui.aplicado
+    gui.v_tema.set("oscuro")
+    gui.v_acento.set("violeta")
+    assert T.tema_actual == "oscuro" and T.ACENTO == T.ACENTOS["violeta"][2]
+    assert preferencias.cargar() == {"tema": "oscuro", "acento": "violeta"}
+    assert gui.aplicado is aplicado and gui.paneles["G"].v_modo.get() == "ON"
+    assert list(gui.grafica.temperaturas)[-1] == 24.0                    # la gráfica nueva tiene el historial
+    assert ("línea de prueba", "info") in gui._lineas_log
+    gui.alternar_tema()
+    assert T.tema_actual == "claro"

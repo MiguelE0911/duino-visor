@@ -110,3 +110,30 @@ def test_tema_mezclar_y_fuente():
     assert T.elegir_fuente(["Arial", "DejaVu Sans"]) == "DejaVu Sans"      # respeta el orden de preferencia
     assert T.elegir_fuente(["Comic Sans"]) == "Helvetica"
     assert T.elegir_fuente(["segoe ui"]) == "Segoe UI"
+
+
+def test_tema_aplicar_paletas_y_acentos():
+    import tema as T
+    try:
+        T.aplicar("oscuro", "verde")
+        assert T.FONDO == T.PALETAS["oscuro"]["FONDO"] and T.ACENTO == T.ACENTOS["verde"][2]
+        T.aplicar("claro", "rosa")
+        assert T.SUPERFICIE == "#ffffff" and T.ACENTO == T.ACENTOS["rosa"][1]
+        T.aplicar("inventado", "nada")                                    # valores raros: los de por defecto
+        assert (T.tema_actual, T.acento_actual) == (T.TEMA_POR_DEFECTO, T.ACENTO_POR_DEFECTO)
+    finally:
+        T.aplicar()
+
+
+# ---------------------------------------------------------------- preferencias
+def test_preferencias_guardar_cargar_y_archivo_roto(tmp_path, monkeypatch):
+    import preferencias
+    ruta = tmp_path / "sub" / "ajustes.json"
+    monkeypatch.setenv("DUINOVISOR_AJUSTES", str(ruta))
+    assert preferencias.cargar() == preferencias.POR_DEFECTO              # no existe
+    assert preferencias.guardar({"tema": "oscuro", "acento": "ambar", "otra": 1})
+    assert preferencias.cargar() == {"tema": "oscuro", "acento": "ambar"}
+    ruta.write_text("{roto", encoding="utf-8")
+    assert preferencias.cargar() == preferencias.POR_DEFECTO
+    ruta.write_text('{"tema": 5}', encoding="utf-8")
+    assert preferencias.cargar() == preferencias.POR_DEFECTO

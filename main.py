@@ -7,10 +7,23 @@ import argparse
 import sys
 
 
+def activar_ppp_reales() -> None:
+    """En Windows con escalado (125 %, 150 %...) evita que el sistema estire la ventana y la vea borrosa.
+    La app luego dibuja todo al tamaño correcto con tema.ESCALA."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
+        pass
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="DuinoVisor: control de LEDs y lectura del DHT11")
     ap.add_argument("--demo", action="store_true", help="usar el Arduino simulado en lugar de la placa")
     args = ap.parse_args(argv)
+    activar_ppp_reales()
     try:
         from gui import App
     except ImportError as e:

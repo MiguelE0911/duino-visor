@@ -16,6 +16,7 @@ except ImportError:          # permite probar calcular_puntos sin Tkinter instal
 MAX_LECTURAS = 60
 T_MIN, T_MAX = 0.0, 50.0       # rango del DHT11 para temperatura
 H_MIN, H_MAX = 0.0, 100.0
+COLOR_HUMEDAD = "#0ea5b7"     # cian: se distingue de cualquier acento
 
 
 def calcular_puntos(valores: Sequence[Optional[float]], ancho: int, alto: int,
@@ -49,14 +50,19 @@ def calcular_puntos(valores: Sequence[Optional[float]], ancho: int, alto: int,
 
 
 class Grafica(_Base):
-    """Gráfica de área: temperatura en ámbar (con relleno) y humedad en crema."""
-    MARGEN = (30, 10, 30, 10)
+    """Gráfica de área: temperatura en el color de acento (con relleno) y humedad en un tono neutro.
 
-    def __init__(self, master, ancho: int = 420, alto: int = 170, fuente: str = "Helvetica"):
-        super().__init__(master, width=ancho, height=alto, bg=T.TARJETA, highlightthickness=0, bd=0)
+    Se le pueden pasar las colas de datos de una gráfica anterior para no perder el historial al
+    reconstruir la ventana (cambio de tema).
+    """
+    MARGEN = (34, 12, 34, 12)
+
+    def __init__(self, master, ancho: int = 420, alto: int = 170, fuente: str = "Helvetica",
+                 temperaturas: Optional[deque] = None, humedades: Optional[deque] = None):
+        super().__init__(master, width=ancho, height=alto, bg=T.SUPERFICIE, highlightthickness=0, bd=0)
         self.ancho, self.alto, self._fuente = ancho, alto, fuente
-        self.temperaturas: deque = deque(maxlen=MAX_LECTURAS)
-        self.humedades: deque = deque(maxlen=MAX_LECTURAS)
+        self.temperaturas: deque = temperaturas if temperaturas is not None else deque(maxlen=MAX_LECTURAS)
+        self.humedades: deque = humedades if humedades is not None else deque(maxlen=MAX_LECTURAS)
         self.bind("<Configure>", self._al_redimensionar)
         self.dibujar()
 
@@ -80,13 +86,13 @@ class Grafica(_Base):
         x0, x1, y0, y1 = izq, self.ancho - der, arriba, self.alto - abajo
         for i in range(6):                                           # rejilla y escalas (50 °C / 100 %)
             y = y0 + (y1 - y0) * i / 5
-            self.create_line(x0, y, x1, y, fill=T.BORDE)
+            self.create_line(x0, y, x1, y, fill=T.BORDE, dash=(2, 4) if 0 < i < 5 else None)
             self.create_text(x0 - 6, y, text=f"{T_MAX - (T_MAX - T_MIN) * i / 5:.0f}", anchor="e",
-                             fill=T.TEXTO_3, font=(self._fuente, 8))
+                             fill=T.TEXTO_3, font=(self._fuente, T.TAM_MINI))
             self.create_text(x1 + 6, y, text=f"{H_MAX - (H_MAX - H_MIN) * i / 5:.0f}", anchor="w",
-                             fill=T.TEXTO_3, font=(self._fuente, 8))
+                             fill=T.TEXTO_3, font=(self._fuente, T.TAM_MINI))
         segmentos_t = calcular_puntos(list(self.temperaturas), self.ancho, self.alto, T_MIN, T_MAX, self.MARGEN)
-        relleno = T.mezclar(T.TARJETA, T.AMBAR, 0.17)
+        relleno = T.mezclar(T.SUPERFICIE, T.ACENTO, 0.14)
         for seg in segmentos_t:                                      # área bajo la curva (franjas verticales)
             if len(seg) < 2:
                 continue
@@ -95,9 +101,9 @@ class Grafica(_Base):
                 self.create_line(x, _interpolar(seg, x), x, y1, fill=relleno, width=3)
                 x += 3
         for segmentos, color, ancho_linea in (
-                (segmentos_t, T.AMBAR, 2.5),
+                (segmentos_t, T.ACENTO, 2.5),
                 (calcular_puntos(list(self.humedades), self.ancho, self.alto, H_MIN, H_MAX, self.MARGEN),
-                 T.mezclar(T.TEXTO, T.TARJETA, 0.15), 1.5)):
+                 COLOR_HUMEDAD, 2)):
             for seg in segmentos:
                 if len(seg) == 1:
                     x, y = seg[0]
