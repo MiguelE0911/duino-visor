@@ -1,132 +1,153 @@
-# Control de Arduino en tiempo real con Python (DuinoVisor)
+# DuinoVisor — control de Arduino en tiempo real con Python
 
-## Resumen
+App de escritorio (Tkinter + pyserial) con tema oscuro y acento ámbar que detecta sola el Arduino,
+configura 3 LEDs (apagado, fijo con brillo, parpadeo, respiración) y muestra temperatura y humedad
+del DHT11 en vivo. El sketch del Arduino no usa `delay()`: todo va con `millis()`.
 
-Proponemos una app de escritorio en Python (Tkinter + pyserial) que detecta sola el Arduino, deja configurar cada LED (apagado, encendido con brillo, intermitente, respiración) y lo envía todo al pulsar **Aplicar**, mientras muestra temperatura y humedad del DHT11 en vivo. El Arduino ejecuta un sketch no bloqueante que interpreta comandos de texto por el puerto serie.
+Funciones: secuencias (semáforo vial, auto fantástico, alerta) con pausa, velocidad y detención, un
+**semáforo 3D en la ventana que espeja al Arduino**, semáforo térmico, escenas `.json`, exportar lecturas a
+CSV y alarmas por temperatura o humedad.
 
-Objetivos que cubre, ligados a la asignatura:
+## Contenido
 
-- **Comunicación PC ↔ microcontrolador** por UART (USB-serie), con un protocolo propio de comandos.
-- **E/S del microcontrolador**: salidas PWM para el brillo (`analogWrite`, 0–255) y entrada digital de un sensor con protocolo de un solo hilo (DHT11).
-- **Tiempo real sin bloqueo**: el Arduino nunca usa `delay()`; todo se planifica con `millis()`, así los tres LEDs, el sensor y los comandos funcionan a la vez.
-- **Concurrencia en la PC**: un hilo lee el puerto serie y la interfaz nunca se congela.
+| Ruta | Qué es |
+| --- | --- |
+| `arduino/control_leds/control_leds.ino` | Sketch (carpeta y archivo con el mismo nombre, como pide el IDE) |
+| `main.py` | Arranque; `--demo` usa el Arduino simulado |
+| `gui.py` | Ventana Tkinter: tres columnas de tarjetas y barra lateral |
+| `tema.py`, `widgets.py` | Paleta oscura/ámbar y widgets propios dibujados en Canvas (tarjetas, píldoras, deslizador, interruptor, medidor, barras, LED y semáforo 3D) |
+| `protocol.py` | Órdenes, validación, interpretación de líneas, qué enviar al pulsar Aplicar, tabla de secuencias y modelo local que espeja al Arduino (funciones puras) |
+| `arduino_link.py` | Puertos, autodetección, hilo lector con cola, envío |
+| `grafica.py` | Gráfica de área en vivo sobre un Canvas |
+| `escenas.py`, `exportar.py`, `alarmas.py` | Escenas `.json` validadas, CSV de lecturas y alarmas con histéresis |
+| `simulador.py` | Arduino falso con la misma lógica del sketch |
+| `docs/vista_previa_widgets.png` | Vista previa de los widgets (semáforo en cuatro estados, medidor, barras, botones, gráfica) |
+| `tests/` | `test_protocol`, `test_extras`, `test_simulador`, `test_gui_logica` (Python) y `test_sketch` (compila el `.ino` con g++ contra un Arduino simulado) |
 
-El código base está listo y probado: el sketch, la app y un modo demo que simula el Arduino para trabajar sin la placa.
+## Instalación y uso
 
-## Arquitectura
+```bash
+pip install pyserial            # Python 3.10+
+# Linux (Ubuntu/Debian): Tkinter y permisos del puerto
+sudo apt install python3-tk
+sudo usermod -aG dialout $USER  # cerrar sesión y volver a entrar
 
-Dos programas que se hablan por el cable USB, que el Arduino expone como un puerto serie (COM3 en Windows, /dev/ttyACM0 o /dev/ttyUSB0 en Linux).
+python main.py --demo           # sin placa
+python main.py                  # con la placa: se conecta sola
+```
 
-[embedded content: arquitectura · 3 módulos Python, 3 tareas en el Arduino]
+Cargar el sketch: en el IDE de Arduino instala las librerías **DHT sensor library** y
+**Adafruit Unified Sensor**, abre `control_leds.ino`, elige la placa (*Arduino 101*, o *Arduino UNO*) y sube.
+La app solo funciona con este sketch cargado: con otro (por ejemplo un ejemplo de la librería DHT11) la placa
+no responde a `PING`, la autodetección falla y las órdenes quedan «sin respuesta».
+Cierra el Monitor Serie antes de abrir la app (el puerto solo lo puede usar un programa).
 
-- **PC (Python 3.10 o superior)**: Tkinter para la interfaz (viene con Python, no hay que instalar nada) y **pyserial** para el puerto. La interfaz nunca lee el puerto directamente: un hilo lo lee y deja cada línea en una cola, y la interfaz la vacía cada 50 ms con `after()`. Así nunca se congela.
-- **Arduino UNO**: un sketch que en cada vuelta de `loop()` hace tres tareas cortas: leer los bytes que llegaron, recalcular el brillo de cada LED y, si ya tocó, leer el DHT11.
-- **Autodetección**: la app lista los puertos con `serial.tools.list_ports`, prueba primero los que tienen un fabricante USB típico de Arduino (oficial, CH340 de los clones, FTDI, CP210x) y se queda con el que responde `PONG OAC-LEDS` a la orden `PING`. Esto evita confundirlo con otro dispositivo serie.
+Probar a mano desde el Monitor Serie (9600 baudios, "Nueva línea"): `PING`, `LED G ON 128`,
+`LED Y BLINK 255 500 250`, `LED R FADE 200 2000`, `DHT 2000`, `TERMO 22 28`, `SEQ VIAL`, `SEQ PAUSA`,
+`SEQ SEGUIR`, `SEQ OFF`, `STATUS`.
 
-Tkinter frente a PySide: elegimos Tkinter porque no requiere instalación y alcanza para sliders, botones y una gráfica en un Canvas. PySide6 da una interfaz más moderna, pero suma una dependencia pesada y más curva de aprendizaje.
+## Conexiones
 
-## Esquema de conexiones
-
-Cada LED va en un pin con PWM (en el UNO: 3, 5, 6, 9, 10, 11) a través de una resistencia de 220 Ω, y el DHT11 en el pin digital 2. Todo comparte la tierra (GND) del Arduino.
-
-| Componente | Pin del Arduino | Conexión | Resistencia |
-| --- | --- | --- | --- |
-| LED rojo | 9 (PWM) | pin → resistencia → pata larga (ánodo); pata corta (cátodo) → GND | 220 Ω en serie |
-| LED verde | 10 (PWM) | igual que el rojo | 220 Ω en serie |
-| LED amarillo | 11 (PWM) | igual que el rojo | 220 Ω en serie |
-| DHT11, pata VCC | 5V | directo | — |
-| DHT11, pata DATA | 2 | directo | 10 kΩ entre DATA y 5V (pull-up) |
-| DHT11, pata GND | GND | directo | — |
-- **Por qué 220 Ω**: con 5 V y unos 2 V de caída en el LED quedan (5 − 2) / 220 ≈ 14 mA, por debajo de los 20 mA recomendados por pin.
-- **Si el DHT11 viene en módulo** (placa pequeña de 3 patas), la resistencia de 10 kΩ ya está incluida. Si es el sensor suelto de 4 patas, la tercera pata no se conecta.
-- **Cómo funciona el brillo**: `analogWrite(pin, 128)` no da 2,5 V. El pin alterna 5 V y 0 V unas 490 veces por segundo (980 en los pines 5 y 6) y queda encendido el 50 % del tiempo; el ojo lo promedia como brillo medio. Es un buen tema para la exposición de la materia.
-
-## Protocolo serial
-
-Texto plano, una orden por línea terminada en salto de línea, a 9600 baudios. Es legible, así se puede probar a mano desde el Monitor Serie del IDE de Arduino antes de tener la app. El Arduino responde `OK` o `ERR <motivo>` a cada orden.
-
-| Orden (PC → Arduino) | Ejemplo | Qué hace |
+| Componente | Pin | Conexión |
 | --- | --- | --- |
-| `PING` | `PING` | Responde `PONG OAC-LEDS 1`; la app lo usa para reconocer la placa |
-| `LED <c> OFF` | `LED R OFF` | Apaga el LED (c = R, G o Y) |
-| `LED <c> ON <brillo>` | `LED G ON 128` | Encendido fijo, brillo 0–255 |
-| `LED <c> BLINK <brillo> <on_ms> <off_ms>` | `LED Y BLINK 255 500 250` | Intermitente: 500 ms encendido, 250 ms apagado (mínimo 20 ms) |
-| `LED <c> FADE <brillo> <periodo_ms>` | `LED R FADE 200 2000` | “Respiración”: sube y baja en 2 s (mínimo 200 ms) |
-| `DHT <periodo_ms>` | `DHT 2000` | Cada cuánto se lee y envía el sensor (mínimo 1000 ms, límite del DHT11) |
-| `TERMO <t_min> <t_max>` / `TERMO OFF` | `TERMO 22 28` | Semáforo térmico (ver extras) |
-| `STATUS` | `STATUS` | Una línea `STATE` por LED con su configuración actual |
+| LED rojo | 3 (PWM) | pin → 220 Ω → ánodo (pata larga); cátodo → GND |
+| LED verde | 5 (PWM) | igual |
+| LED amarillo | 6 (PWM) | igual |
+| DHT11 VCC | 5V | directo |
+| DHT11 DATA | 2 | directo + 10 kΩ entre DATA y 5V (si es módulo de 3 patas ya la trae) |
+| DHT11 GND | GND | directo |
 
-| Mensaje (Arduino → PC) | Ejemplo | Cuándo |
-| --- | --- | --- |
-| `DATA T=<°C> H=<%>` | `DATA T=24.5 H=51.0` | Cada periodo del DHT |
-| `DATA ERR` | `DATA ERR` | El sensor no respondió (cable flojo, sin pull-up) |
-| `OK <orden>` | `OK LED R` | Orden aceptada |
-| `ERR <motivo>` | `ERR brillo 0-255` | Orden rechazada; la app la muestra en el registro |
-| `STATE …` | `STATE G BLINK 200 100 300 2000` | Respuesta a `STATUS` |
+Sensor suelto de 4 patas: la tercera no se conecta. En el Arduino 101 solo 3, 5, 6 y 9 tienen PWM (10 y 11 no),
+por eso los LEDs van en 3, 5 y 6.
 
-El Arduino acepta minúsculas (las pasa a mayúsculas) y descarta líneas de más de 63 caracteres.
+## Protocolo (9600 baudios, texto, una orden por línea)
 
-## Sketch Arduino no bloqueante
+| PC → Arduino | Qué hace |
+| --- | --- |
+| `PING` | Responde `PONG OAC-LEDS 1` |
+| `LED <R\|G\|Y> OFF` | Apaga |
+| `LED <c> ON <brillo 0-255>` | Encendido fijo |
+| `LED <c> BLINK <brillo> <on_ms> <off_ms>` | Intermitente (mínimo 20 ms) |
+| `LED <c> FADE <brillo> <periodo_ms>` | Respiración (mínimo 200 ms) |
+| `DHT <periodo_ms>` | Cada cuánto se lee el sensor (mínimo 1000 ms) |
+| `TERMO <tmin> <tmax>` / `TERMO OFF` | Semáforo térmico |
+| `SEQ <VIAL\|FANTASTICO\|ALERTA> [vel]` | Inicia la secuencia; `vel` es el % de velocidad (25-400, por defecto 100) |
+| `SEQ PAUSA` / `SEQ SEGUIR` / `SEQ OFF` | Pausa (los LEDs se quedan como están), continúa o detiene y apaga |
+| `STATUS` | Una línea `STATE <c> <modo> <brillo> <on> <off> <periodo>` por LED, una `STATE SEQ <nombre> <vel> <RUN\|PAUSA>` (o `STATE SEQ OFF`) y `OK STATUS` |
 
-El sketch nunca llama a `delay()`: si lo hiciera, un LED intermitente de 500 ms congelaría la lectura de órdenes y los demás LEDs durante medio segundo. En su lugar, `loop()` se repite miles de veces por segundo y en cada vuelta hace tres tareas cortas:
+| Arduino → PC | Cuándo |
+| --- | --- |
+| `DATA T=24.0 H=51.0` / `DATA ERR` | Cada periodo del DHT / el sensor no respondió |
+| `OK …` / `ERR <motivo>` | Respuesta a cada orden |
 
-1. `leerSerie()`: lee los bytes que haya en el búfer del puerto (sin esperar) y los acumula; al llegar el salto de línea llama a `procesarComando()`, que separa las palabras con `strtok` y actualiza el estado.
-2. `actualizarLeds(ahora)`: para cada LED calcula el brillo de este instante según su modo y hace `analogWrite`.
-    - BLINK: si `ahora - ultimoCambio >= onMs` (u `offMs`), invierte la fase. La resta sin signo sigue funcionando cuando `millis()` se desborda a los 49 días.
-    - FADE: onda triangular, brillo proporcional a la posición dentro del periodo.
-3. `leerSensor(ahora)`: si pasaron `periodoDht` ms, lee el DHT11 y envía `DATA`. Es el único paso “lento” (unos 25 ms), aceptable para LEDs.
+## Secuencias y semáforo espejo
 
-Cada LED es un `struct Led` con pin, modo, brillo, tiempos y su último cambio, guardado en un arreglo. Agregar un cuarto LED es añadir una línea al arreglo.
+| Secuencia | Pasos |
+| --- | --- |
+| `VIAL` | verde 5 s, amarillo 1,5 s, rojo 5 s |
+| `FANTASTICO` | rojo, amarillo, verde, amarillo, 150 ms cada uno |
+| `ALERTA` | amarillo 0,5 s encendido y 0,5 s apagado |
 
-Librerías: **DHT sensor library** de Adafruit y su dependencia **Adafruit Unified Sensor**, instaladas desde el Gestor de librerías del IDE.
+La velocidad escala todas las duraciones (mínimo 20 ms por paso). Una orden `LED` manual, `TERMO` o `SEQ` nuevo
+cancela lo anterior: **la última orden manda**.
 
-Archivo: control_leds.ino. Lo compilamos contra una simulación de Arduino en la PC y comprobamos las respuestas a cada orden, los tiempos del intermitente, la respiración y el semáforo térmico; falta probarlo en la placa real.
+El semáforo 3D y los LEDs de cada tarjeta no leen nada del Arduino: calculan lo mismo con el modelo de
+`protocol.py` (`SecuenciaLocal`, `brillo_en`, `zona_termo`), arrancando en el instante en que el Arduino
+confirmó la orden con `OK`. Las pruebas comparan ese modelo con el sketch milisegundo a milisegundo.
+Pausar, seguir o detener en la app manda la orden al Arduino, y si se desconecta o se cierra la app con una
+secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en cambio, sigue funcionando solo.
 
-## Módulos de la app Python
+## Escenas, CSV y alarmas
 
-Cada archivo tiene una sola responsabilidad, así pueden trabajar en paralelo sin pisarse.
+- **Escenas**: *Guardar escena* y *Cargar escena* guardan en un `.json` los tres LEDs, el periodo del sensor, el
+  semáforo térmico y la secuencia elegida. Al cargar se valida todo; si algo está mal no se cambia nada. Después
+  hay que pulsar *Aplicar* para enviarla.
+- **Exportar CSV**: guarda cada lectura con fecha y hora (las fallidas quedan como «error de sensor»). Se
+  conservan las últimas 100 000 lecturas. El archivo abre bien en Excel.
+- **Alarmas**: avisan en la ventana (franja roja, registro y pitido del sistema) si la temperatura o la humedad
+  superan su máximo, y avisan de nuevo cuando vuelven a la normalidad (con 1 unidad de histéresis). Una
+  lectura fallida no apaga ni dispara una alarma.
 
-| Archivo | Responsabilidad | Depende de |
-| --- | --- | --- |
-| `main.py` | Arranque; `--demo` usa el Arduino simulado | gui |
-| `gui.py` | Ventana Tkinter: un panel por LED, sensor, botón Aplicar, registro | protocol, arduino_link, grafica |
-| `protocol.py` | `LedConfig`, construir y validar órdenes, interpretar líneas, calcular cambios | nada (funciones puras) |
-| `arduino_link.py` | Listar puertos, autodetectar, hilo lector con cola, enviar | pyserial, protocol |
-| `grafica.py` | Gráfica en vivo de temperatura y humedad sobre un Canvas | tkinter |
-| `simulador.py` | Arduino falso que imita el sketch, para trabajar sin la placa | protocol |
-| `tests/test_protocol.py` | Pruebas con pytest del protocolo (8 pruebas, pasan) | protocol |
+## Decisiones de diseño (cambios respecto al borrador)
 
-**Flujo del botón Aplicar**
+- **Aplicar espera `OK`/`ERR` de cada orden** antes de enviar la siguiente (reintenta una vez si no hay
+  respuesta). Una configuración solo se da por aplicada cuando el Arduino la confirmó.
+- **Semáforo térmico con histéresis de 1 °C**: sube de zona al instante y baja solo si la temperatura cae
+  1 °C por debajo del umbral. El DHT11 tiene ±2 °C de error y resolución de 1 °C; sin histéresis parpadearía.
+- **Prioridad entre TERMO y los LEDs**: la última orden manda. Una orden `LED` cancela el semáforo y deja
+  los LEDs apagados salvo el ordenado. En la ventana, al activar el semáforo los paneles de LED se
+  desactivan; al desactivarlo, Aplicar manda `TERMO OFF` y reenvía los tres LEDs. Si el sensor falla
+  (`DATA ERR`), el semáforo conserva la última zona.
+- **Respiración con corrección gamma** (brillo × x²): una rampa lineal de PWM se ve poco natural.
+- **Línea de más de 63 caracteres**: se descarta y se responde `ERR linea larga`.
+- **Al conectar**: abrir el puerto reinicia el UNO, pero no el Arduino 101 (USB nativo), que puede seguir con
+  LEDs, semáforo o secuencia de antes. Por eso, al conectar con la placa real la app envía `TERMO OFF` (lo apaga
+  todo), olvida lo aplicado y reenvía todo al pulsar Aplicar.
+- **Líneas troceadas**: la app junta lo que llega del puerto hasta el salto de línea; si una línea llega en
+  varios paquetes no se parte.
 
-1. Al mover cualquier control, la app solo muestra “Hay cambios sin aplicar”; no envía nada.
-2. Al pulsar **Aplicar**, cada panel genera su `LedConfig` y se valida (brillo 0–255, tiempos mínimos). Si algo es inválido, aparece un aviso y no se envía nada.
-3. `protocol.cambios()` compara con la última configuración aplicada y devuelve solo las órdenes de los LEDs que cambiaron.
-4. Se envían por el puerto y quedan en el registro con `→`; las respuestas `OK`/`ERR` aparecen con `←`.
-5. Al reconectar, la app olvida lo aplicado y el siguiente Aplicar reenvía todo, porque el Arduino se reinicia al abrir el puerto.
+## Limitaciones conocidas
 
-**Autodetección**: al abrir la app se busca la placa en un hilo aparte (abrir el puerto reinicia el Arduino y tarda unos 2 s por puerto). Si la encuentra, se conecta sola; si no, se puede elegir el puerto a mano y pulsar Conectar.
+- **No se ha probado con la placa real.** El sketch se compila y prueba contra un Arduino simulado en C++
+  (más de 50 pruebas, incluida la comparación con el modelo de la app); la lógica de la ventana se probó con un
+  Tkinter de mentira y los widgets se dibujaron con un lienzo de prueba para revisar su aspecto
+  (`docs/vista_previa_widgets.png`). **La ventana Tkinter real nunca se ha abierto**: puede haber detalles de
+  diseño por ajustar (tipografías, espacios, colores del desplegable de puertos).
+- **Lectura del DHT11**: la librería desactiva las interrupciones unos 4–5 ms y bloquea ~25 ms. Una orden que
+  llegue justo entonces podría perder algún carácter; por eso la app espera confirmación y reintenta.
+  Si lo ves en la placa real, avísame o sube a 115200 baudios y mide.
+- **LEDs virtuales**: aparecen siempre, también con la placa real, calculados desde lo que el Arduino confirmó.
+  Si alguien cambia los LEDs sin pasar por la app (por ejemplo desde el Monitor Serie), el espejo no se entera.
+- **Tkinter no dibuja sombras suaves ni transparencias**: el brillo de los LEDs usa anillos concéntricos y el
+  área de la gráfica, franjas de un color mezclado con el fondo.
 
-## Funciones extra
+## Pruebas
 
-Las dos primeras ya están en el código base; el resto son ideas para sumar puntos si sobra tiempo.
+```bash
+python -m pytest tests -q       # el test del sketch necesita g++
+```
 
-| Extra | Estado | Idea |
-| --- | --- | --- |
-| Gráfica en vivo | Incluida | Últimas 60 lecturas de temperatura (rojo) y humedad (azul) en la ventana |
-| Semáforo térmico | Incluido | `TERMO 22 28`: verde bajo 22 °C, amarillo entre 22 y 28 °C, rojo intermitente desde 28 °C. Lo decide el Arduino, así funciona aunque la app se cierre |
-| Guardar y cargar escenas | Por hacer | Guardar la configuración de los 3 LEDs en un `.json` y cargarla con un clic |
-| Exportar lecturas a CSV | Por hacer | Guardar cada `DATA` con fecha y hora para analizarlas en Excel |
-| Secuencias | Por hacer | Semáforo vial o “auto fantástico”: una orden nueva `SEQ` en el sketch |
-| Alarma por humedad | Por hacer | Aviso en la app cuando la humedad pase un umbral |
-| Recuperar estado al conectar | Por hacer | Enviar `STATUS` al conectar y cargar los paneles con lo que tiene el Arduino |
+## Extras pendientes
 
-## Plan de trabajo y cómo ejecutar
-
-Se reparte por el cable: una persona se encarga de todo lo que corre en el Arduino y la otra de la app. El protocolo es el contrato entre ambas, así cada una puede avanzar sola (el modo `--demo` y el Monitor Serie sirven para probar sin la otra parte).
-
-| Etapa | Persona A: Arduino y hardware | Persona B: app Python | Juntas |
-| --- | --- | --- | --- |
-| 1. Base | Armar el circuito; cargar el sketch y probar las órdenes a mano en el Monitor Serie | Instalar pyserial; correr `python main.py --demo` y las pruebas | Acordar el protocolo (esta tabla) |
-| 2. Integración | Revisar `DATA ERR`, pull-up y tiempos mínimos | Probar la autodetección en Windows y Linux con la placa real | Primera prueba completa con Aplicar |
-| 3. Extras | Orden `SEQ` o mejoras al semáforo térmico | Escenas en `.json`, exportar CSV, `STATUS` al conectar | Elegir 2 extras |
-| 4. Entrega | Foto o diagrama del circuito (Fritzing o Tinkercad) | Capturas de la app | Informe, demo en vivo, explicación de PWM, UART y `millis()` |
+Ninguno de los extras del documento queda pendiente. Ideas para más adelante: secuencias definidas por el
+usuario, alarmas con mínimo, y sonido o parpadeo en el Arduino cuando salta una alarma.
