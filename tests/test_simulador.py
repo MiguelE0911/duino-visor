@@ -134,3 +134,27 @@ def test_simulador_seq_errores_y_cancelaciones():
     s.procesar("SEQ ALERTA")
     s.procesar("TERMO 22 28")
     assert not s.seq.activa
+
+
+def test_enlace_junta_lineas_que_llegan_en_trozos():
+    """pyserial devuelve la línea a medias si vence el timeout (USB nativo): hay que juntarla."""
+    class Troceado:
+        def __init__(self):
+            self.trozos = [b"DATA T=", b"24.0", b" H=51.0\r\n", b"OK LED ", b"R\r\n"]
+
+        def readline(self):
+            if self.trozos:
+                return self.trozos.pop(0)
+            time.sleep(0.01)
+            return b""
+
+        def close(self):
+            pass
+
+    e = Enlace()
+    e.usar(Troceado())
+    try:
+        recibidos = [e.cola.get(timeout=2) for _ in range(2)]
+        assert recibidos == [("rx", "DATA T=24.0 H=51.0"), ("rx", "OK LED R")]
+    finally:
+        e.cerrar()

@@ -52,12 +52,12 @@ def test_ping(binario):
 def test_led_on_y_minusculas(binario):
     s = correr(binario, "> LED G ON 128", "> led r on 10", "t 5", "pwm")
     assert respuestas(s) == ["OK LED G", "OK LED R"]
-    assert ultimo_pwm(s) == {9: 10, 10: 128, 11: 0}
+    assert ultimo_pwm(s) == {3: 10, 5: 128, 6: 0}
 
 
 def test_led_off(binario):
     s = correr(binario, "> LED G ON 255", "t 5", "> LED G OFF", "t 5", "pwm")
-    assert ultimo_pwm(s)[10] == 0
+    assert ultimo_pwm(s)[5] == 0
 
 
 @pytest.mark.parametrize("orden,error", [
@@ -84,17 +84,17 @@ def test_linea_larga_se_descarta(binario):
 
 def test_error_no_cambia_el_led(binario):
     s = correr(binario, "> LED R ON 100", "> LED R ON 999", "t 5", "pwm")
-    assert ultimo_pwm(s)[9] == 100
+    assert ultimo_pwm(s)[3] == 100
 
 
 def test_blink_tiempos(binario):
     s = correr(binario, "> LED Y BLINK 255 500 250", "t 1400")
-    assert cambios_pwm(s, 11)[1:] == [(0, 255), (500, 0), (750, 255), (1250, 0)]
+    assert cambios_pwm(s, 6)[1:] == [(0, 255), (500, 0), (750, 255), (1250, 0)]
 
 
 def test_blink_sobrevive_al_desborde_de_millis(binario):
     s = correr(binario, "start 4294966800", "> LED Y BLINK 255 500 250", "t 1400")
-    c = cambios_pwm(s, 11)[1:]
+    c = cambios_pwm(s, 6)[1:]
     base = 4294966800
     esperado = [(base + 0, 255), (base + 500, 0), (base + 750, 255), (base + 1250, 0)]
     # los tiempos que pasan de 2^32 vuelven a empezar en 0
@@ -104,7 +104,7 @@ def test_blink_sobrevive_al_desborde_de_millis(binario):
 
 def test_fade_sube_y_baja(binario):
     s = correr(binario, "> LED R FADE 200 2000", "t 4100")
-    c = cambios_pwm(s, 9)[1:]
+    c = cambios_pwm(s, 3)[1:]
     valores = [v for _, v in c]
     assert max(valores) == 200
     pico = [t for t, v in c if v == 200][0]
@@ -133,31 +133,31 @@ def pwm_ahora(binario, *pasos):
 
 def test_termo_zonas_e_histeresis(binario):
     base = ["> DHT 1000", "> TERMO 22 28"]
-    assert pwm_ahora(binario, *base, "dht 20 50", "t 1100") == {9: 0, 10: 255, 11: 0}        # verde
-    assert pwm_ahora(binario, *base, "dht 25 50", "t 1100") == {9: 0, 10: 0, 11: 255}        # amarillo
+    assert pwm_ahora(binario, *base, "dht 20 50", "t 1100") == {3: 0, 5: 255, 6: 0}        # verde
+    assert pwm_ahora(binario, *base, "dht 25 50", "t 1100") == {3: 0, 5: 0, 6: 255}        # amarillo
     s = correr(binario, *base, "dht 30 50", "t 1100", "pwm")                                  # rojo parpadea
-    assert [v for _, v in cambios_pwm(s, 9)] == [0, 255]
-    assert len(cambios_pwm(correr(binario, *base, "dht 30 50", "t 2000"), 9)) > 3
+    assert [v for _, v in cambios_pwm(s, 3)] == [0, 255]
+    assert len(cambios_pwm(correr(binario, *base, "dht 30 50", "t 2000"), 3)) > 3
     # histéresis: tras estar en rojo, 27.5 sigue rojo y 26.5 ya baja a amarillo
     s = correr(binario, *base, "dht 30 50", "t 1100", "dht 27.5 50", "t 1000", "t 0", "pwm")
-    assert 255 in [v for _, v in cambios_pwm(s, 9)] and ultimo_pwm(s)[11] == 0
-    assert pwm_ahora(binario, *base, "dht 30 50", "t 1100", "dht 26.5 50", "t 1000")[11] == 255
+    assert 255 in [v for _, v in cambios_pwm(s, 3)] and ultimo_pwm(s)[6] == 0
+    assert pwm_ahora(binario, *base, "dht 30 50", "t 1100", "dht 26.5 50", "t 1000")[6] == 255
     # sube sin histéresis: verde -> amarillo apenas llega a 22
-    assert pwm_ahora(binario, *base, "dht 20 50", "t 1100", "dht 22 50", "t 1000")[11] == 255
+    assert pwm_ahora(binario, *base, "dht 20 50", "t 1100", "dht 22 50", "t 1000")[6] == 255
     # bajar de amarillo a verde exige 21 °C o menos: 21.5 se queda amarillo
-    assert pwm_ahora(binario, *base, "dht 25 50", "t 1100", "dht 21.5 50", "t 1000")[11] == 255
+    assert pwm_ahora(binario, *base, "dht 25 50", "t 1100", "dht 21.5 50", "t 1000")[6] == 255
 
 
 def test_led_manual_cancela_termo(binario):
     s = correr(binario, "> DHT 1000", "> TERMO 22 28", "dht 25 50", "t 1100",
                "> LED G ON 50", "dht 30 50", "t 1100", "pwm")
-    assert ultimo_pwm(s) == {9: 0, 10: 50, 11: 0} or ultimo_pwm(s)[10] == 50
-    assert ultimo_pwm(s)[11] == 0                    # el amarillo del semáforo se apagó
+    assert ultimo_pwm(s) == {3: 0, 5: 50, 6: 0} or ultimo_pwm(s)[5] == 50
+    assert ultimo_pwm(s)[6] == 0                    # el amarillo del semáforo se apagó
 
 
 def test_termo_off(binario):
     s = correr(binario, "> DHT 1000", "> TERMO 22 28", "dht 25 50", "t 1100", "> TERMO OFF", "t 5", "pwm")
-    assert ultimo_pwm(s) == {9: 0, 10: 0, 11: 0}
+    assert ultimo_pwm(s) == {3: 0, 5: 0, 6: 0}
 
 
 def test_status(binario):
@@ -173,22 +173,22 @@ def test_status(binario):
 def test_seq_vial_tiempos(binario):
     s = correr(binario, "> SEQ VIAL", "t 12000")
     assert sin_datos(respuestas(s)) == ["OK SEQ"]
-    assert cambios_pwm(s, 10)[1:] == [(0, 255), (5000, 0), (11500, 255)]      # verde
-    assert cambios_pwm(s, 11)[1:] == [(5000, 255), (6500, 0)]                  # amarillo
-    assert cambios_pwm(s, 9)[1:] == [(6500, 255), (11500, 0)]                  # rojo
+    assert cambios_pwm(s, 5)[1:] == [(0, 255), (5000, 0), (11500, 255)]      # verde
+    assert cambios_pwm(s, 6)[1:] == [(5000, 255), (6500, 0)]                  # amarillo
+    assert cambios_pwm(s, 3)[1:] == [(6500, 255), (11500, 0)]                  # rojo
 
 
 def test_seq_velocidad(binario):
     s = correr(binario, "> SEQ VIAL 200", "t 3000")
-    assert cambios_pwm(s, 10)[1:] == [(0, 255), (2500, 0)]                     # el doble de rápido
+    assert cambios_pwm(s, 5)[1:] == [(0, 255), (2500, 0)]                     # el doble de rápido
     s = correr(binario, "> SEQ VIAL 50", "t 11000")
-    assert cambios_pwm(s, 10)[1:] == [(0, 255), (10000, 0)]
+    assert cambios_pwm(s, 5)[1:] == [(0, 255), (10000, 0)]
 
 
 def test_seq_fantastico_barre_ida_y_vuelta(binario):
     s = correr(binario, "> SEQ FANTASTICO", "t 700")
-    orden = sorted([(t, pin) for pin in (9, 10, 11) for t, v in cambios_pwm(s, pin)[1:] if v == 255])
-    assert [p for _, p in orden] == [9, 11, 10, 11, 9]                         # R, Y, G, Y, R
+    orden = sorted([(t, pin) for pin in (3, 5, 6) for t, v in cambios_pwm(s, pin)[1:] if v == 255])
+    assert [p for _, p in orden] == [3, 6, 5, 6, 3]                         # R, Y, G, Y, R
 
 
 def test_seq_pausa_y_seguir(binario):
@@ -196,25 +196,25 @@ def test_seq_pausa_y_seguir(binario):
     assert sin_datos(respuestas(s)) == ["OK SEQ", "OK SEQ", "OK SEQ"]
     # amarillo: enciende en 0 y apaga en 500; en pausa (700-2700) no cambia;
     # al seguir faltaban 300 ms del paso apagado, así que vuelve a encender en 3000
-    assert cambios_pwm(s, 11)[1:] == [(0, 255), (500, 0), (3000, 255)]
+    assert cambios_pwm(s, 6)[1:] == [(0, 255), (500, 0), (3000, 255)]
 
 
 def test_seq_off_apaga_todo(binario):
     s = correr(binario, "> SEQ VIAL", "t 100", "> SEQ OFF", "t 6000", "pwm")
-    assert ultimo_pwm(s) == {9: 0, 10: 0, 11: 0}
+    assert ultimo_pwm(s) == {3: 0, 5: 0, 6: 0}
 
 
 def test_led_manual_y_termo_cancelan_seq(binario):
     s = correr(binario, "> SEQ VIAL", "t 100", "> LED R ON 50", "t 6000", "pwm")
-    assert ultimo_pwm(s) == {9: 50, 10: 0, 11: 0}
+    assert ultimo_pwm(s) == {3: 50, 5: 0, 6: 0}
     # TERMO manda: la secuencia ya no corre (el rojo del VIAL llegaría a 6500) y queda el amarillo de 24 °C
     s = correr(binario, "> SEQ VIAL", "t 100", "> TERMO 22 28", "t 8000", "pwm")
-    assert ultimo_pwm(s) == {9: 0, 10: 0, 11: 255}
+    assert ultimo_pwm(s) == {3: 0, 5: 0, 6: 255}
 
 
 def test_seq_cancela_termo(binario):
     s = correr(binario, "> DHT 1000", "> TERMO 22 28", "dht 25 50", "t 1100", "> SEQ ALERTA", "dht 30 50", "t 1100", "pwm")
-    assert ultimo_pwm(s)[9] == 0                                                # no se puso rojo por TERMO
+    assert ultimo_pwm(s)[3] == 0                                                # no se puso rojo por TERMO
 
 
 @pytest.mark.parametrize("orden,error", [
@@ -251,11 +251,11 @@ def test_modelo_local_coincide_con_el_sketch(binario, nombre, vel, ms):
     previo = {"R": 0, "G": 0, "Y": 0}
     for t in range(ms + 1):                                  # el driver también ejecuta loop() en t = ms
         b = modelo.brillos(t)
-        for c, pin in (("R", 9), ("G", 10), ("Y", 11)):
+        for c, pin in (("R", 3), ("G", 5), ("Y", 6)):
             if b[c] != previo[c]:
                 esperado.setdefault(pin, []).append((t, b[c]))
                 previo[c] = b[c]
-    for pin in (9, 10, 11):
+    for pin in (3, 5, 6):
         real = cambios_pwm(s, pin)[1:]                       # sin la escritura inicial de setup()
         assert real == esperado.get(pin, []), f"{nombre} x{vel} pin {pin}"
 
@@ -265,7 +265,7 @@ def test_brillo_en_coincide_con_el_sketch_en_fade_y_blink(binario):
     s = correr(binario, "> LED R FADE 255 1001", "t 2100")      # periodo impar a propósito
     modelo = P.LedConfig(color="R", modo="FADE", brillo=255, periodo_ms=1001)
     real, valor = {}, 0
-    for t, v in cambios_pwm(s, 9)[1:]:
+    for t, v in cambios_pwm(s, 3)[1:]:
         real[t] = v
     for t in range(2101):
         esperado = P.brillo_en(modelo, t)

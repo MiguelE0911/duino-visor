@@ -1,7 +1,8 @@
 /*
  * control_leds.ino  -  DuinoVisor
  *
- * 3 LEDs con PWM (pines 9, 10, 11) + sensor DHT11 (pin 2).
+ * 3 LEDs con PWM (pines 3, 5, 6) + sensor DHT11 (pin 2).
+ * Placa: Arduino 101 (en la 101 solo 3, 5, 6 y 9 tienen PWM; en un UNO también valen).
  * Protocolo de texto por puerto serie a 9600 baudios, una orden por línea.
  * NUNCA se usa delay(): todo se planifica con millis().
  *
@@ -36,9 +37,9 @@ struct Led {
 
 // Agregar un cuarto LED es añadir una línea aquí.
 Led leds[] = {
-  { 'R',  9, M_OFF, 0, 0, 0, 0, 0, false, -1 },
-  { 'G', 10, M_OFF, 0, 0, 0, 0, 0, false, -1 },
-  { 'Y', 11, M_OFF, 0, 0, 0, 0, 0, false, -1 },
+  { 'R',  3, M_OFF, 0, 0, 0, 0, 0, false, -1 },
+  { 'G',  5, M_OFF, 0, 0, 0, 0, 0, false, -1 },
+  { 'Y',  6, M_OFF, 0, 0, 0, 0, 0, false, -1 },
 };
 const uint8_t N_LEDS = sizeof(leds) / sizeof(leds[0]);
 

@@ -37,7 +37,9 @@ python main.py                  # con la placa: se conecta sola
 ```
 
 Cargar el sketch: en el IDE de Arduino instala las librerías **DHT sensor library** y
-**Adafruit Unified Sensor**, abre `control_leds.ino`, elige *Arduino UNO* y sube.
+**Adafruit Unified Sensor**, abre `control_leds.ino`, elige la placa (*Arduino 101*, o *Arduino UNO*) y sube.
+La app solo funciona con este sketch cargado: con otro (por ejemplo un ejemplo de la librería DHT11) la placa
+no responde a `PING`, la autodetección falla y las órdenes quedan «sin respuesta».
 Cierra el Monitor Serie antes de abrir la app (el puerto solo lo puede usar un programa).
 
 Probar a mano desde el Monitor Serie (9600 baudios, "Nueva línea"): `PING`, `LED G ON 128`,
@@ -48,14 +50,15 @@ Probar a mano desde el Monitor Serie (9600 baudios, "Nueva línea"): `PING`, `LE
 
 | Componente | Pin | Conexión |
 | --- | --- | --- |
-| LED rojo | 9 (PWM) | pin → 220 Ω → ánodo (pata larga); cátodo → GND |
-| LED verde | 10 (PWM) | igual |
-| LED amarillo | 11 (PWM) | igual |
+| LED rojo | 3 (PWM) | pin → 220 Ω → ánodo (pata larga); cátodo → GND |
+| LED verde | 5 (PWM) | igual |
+| LED amarillo | 6 (PWM) | igual |
 | DHT11 VCC | 5V | directo |
 | DHT11 DATA | 2 | directo + 10 kΩ entre DATA y 5V (si es módulo de 3 patas ya la trae) |
 | DHT11 GND | GND | directo |
 
-Sensor suelto de 4 patas: la tercera no se conecta.
+Sensor suelto de 4 patas: la tercera no se conecta. En el Arduino 101 solo 3, 5, 6 y 9 tienen PWM (10 y 11 no),
+por eso los LEDs van en 3, 5 y 6.
 
 ## Protocolo (9600 baudios, texto, una orden por línea)
 
@@ -117,8 +120,11 @@ secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en ca
   (`DATA ERR`), el semáforo conserva la última zona.
 - **Respiración con corrección gamma** (brillo × x²): una rampa lineal de PWM se ve poco natural.
 - **Línea de más de 63 caracteres**: se descarta y se responde `ERR linea larga`.
-- **Reinicio al conectar**: abrir el puerto reinicia el UNO, por eso la app olvida lo aplicado y reenvía todo.
-  Por la misma razón "recuperar el estado al conectar" con `STATUS` no aporta nada en un UNO.
+- **Al conectar**: abrir el puerto reinicia el UNO, pero no el Arduino 101 (USB nativo), que puede seguir con
+  LEDs, semáforo o secuencia de antes. Por eso, al conectar con la placa real la app envía `TERMO OFF` (lo apaga
+  todo), olvida lo aplicado y reenvía todo al pulsar Aplicar.
+- **Líneas troceadas**: la app junta lo que llega del puerto hasta el salto de línea; si una línea llega en
+  varios paquetes no se parte.
 
 ## Limitaciones conocidas
 

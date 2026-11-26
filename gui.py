@@ -475,7 +475,7 @@ class App(tk.Tk):
         self._al_conectar("SIMULADOR")
 
     def _reiniciar_espejo(self):
-        self.aplicado = P.Aplicado()               # el Arduino se reinició al abrir el puerto
+        self.aplicado = P.Aplicado()               # no se sabe qué tiene la placa: se reenvía todo
         self.pendientes, self.paso_actual = [], None
         self.secuencia.detener()
         self.vista = apagados()
@@ -568,7 +568,8 @@ class App(tk.Tk):
             self.log(f"Sin respuesta a «{paso.texto}», reintentando…", "err")
             self._enviar_siguiente(reintento=True)
         else:
-            self._abortar(f"El Arduino no respondió a «{paso.texto}». Se detuvo el envío.")
+            self._abortar(f"El Arduino no respondió a «{paso.texto}». Se detuvo el envío. "
+                          "Comprueba que la placa tenga cargado control_leds.ino.")
 
     def _cancelar_timeout(self):
         if self._id_timeout is not None:
@@ -780,9 +781,13 @@ class App(tk.Tk):
                 self.conectar()
             else:
                 self.v_estado.set("No se encontró la placa")
-                self.log("No se encontró el Arduino. Elige el puerto a mano y conéctalo con el botón de encendido.", "err")
+                self.log("No se encontró el Arduino (ningún puerto respondió a PING). ¿Está cargado "
+                         "control_leds.ino en la placa? Si lo está, elige el puerto a mano y pulsa Conexión.", "err")
         elif tipo == "conectado":
             self._al_conectar(dato)
+            # Una placa con USB nativo (Arduino 101) no se reinicia al abrir el puerto y puede seguir con
+            # LEDs, semáforo o secuencia de antes. TERMO OFF lo apaga todo y la deja igual que el espejo.
+            self._enviar_pasos([P.Paso("TERMO OFF", "termo", valor=None)])
         elif tipo == "fallo":
             self.v_estado.set("Sin conexión")
             self.log(dato, "err")

@@ -30,7 +30,7 @@ int main() {
       std::istringstream s(l.substr(4)); std::string a, b; s >> a >> b;
       if (a == "nan") { shim_dht_t = shim_dht_h = NAN; } else { shim_dht_t = atof(a.c_str()); shim_dht_h = atof(b.c_str()); }
     }
-    else if (l == "pwm") { printf("PWM 9=%d 10=%d 11=%d\n", ultimo[9], ultimo[10], ultimo[11]); }
+    else if (l == "pwm") { printf("PWM 3=%d 5=%d 6=%d\n", ultimo[3], ultimo[5], ultimo[6]); }
   }
   return 0;
 }

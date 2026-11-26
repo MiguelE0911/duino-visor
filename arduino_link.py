@@ -13,7 +13,8 @@ from typing import Callable, Optional
 import protocol
 
 BAUDIOS = 9600
-ESPERA_REINICIO = 2.0          # abrir el puerto reinicia al Arduino UNO
+ESPERA_REINICIO = 2.0          # abrir el puerto reinicia al UNO; en la 101 (USB nativo) solo da margen
+MAX_LINEA_RX = 256             # bytes sin salto de línea a partir de los cuales se descarta el búfer
 
 # Fabricantes USB típicos: Arduino oficial, CH340 (clones), FTDI, CP210x
 VID_ARDUINO = {0x2341, 0x2A03, 0x1A86, 0x0403, 0x10C4}
@@ -21,6 +22,26 @@ VID_ARDUINO = {0x2341, 0x2A03, 0x1A86, 0x0403, 0x10C4}
 
 class PySerialNoDisponible(RuntimeError):
     pass
+
+
+class _Lineas:
+    """Junta los trozos que devuelve readline() hasta tener una línea completa.
+
+    pyserial devuelve la línea a medias cuando vence el timeout; sin esto, una línea que llega
+    en varios paquetes (USB nativo) se partiría y no se reconocería.
+    """
+
+    def __init__(self):
+        self._buf = b""
+
+    def agregar(self, datos: bytes) -> "str | None":
+        self._buf += datos
+        if not self._buf.endswith(b"\n"):
+            if len(self._buf) > MAX_LINEA_RX:
+                self._buf = b""
+            return None
+        linea, self._buf = self._buf, b""
+        return linea.decode("ascii", "ignore").strip()
 
 
 def _serial():
@@ -48,10 +69,12 @@ def probar_puerto(dispositivo: str, espera: float = ESPERA_REINICIO, limite: flo
             time.sleep(espera)
             s.reset_input_buffer()
             s.write(b"PING\n")
+            lineas = _Lineas()
             fin = time.monotonic() + limite
             while time.monotonic() < fin:
-                linea = s.readline().decode("ascii", "ignore")
-                if protocol.es_pong(linea):
+                datos = s.readline()
+                linea = lineas.agregar(datos) if datos else None
+                if linea is not None and protocol.es_pong(linea):
                     return True
     except (OSError, serial.SerialException):
         pass
@@ -100,6 +123,7 @@ class Enlace:
 
     def _leer(self):
         dev = self._dev
+        lineas = _Lineas()
         while self._activo.is_set():
             try:
                 datos = dev.readline()
@@ -108,8 +132,9 @@ class Enlace:
                     self.cola.put(("error", f"Se perdió la conexión: {exc}"))
                     self._activo.clear()
                 break
-            if datos:
-                self.cola.put(("rx", datos.decode("ascii", "ignore").strip()))
+            linea = lineas.agregar(datos) if datos else None
+            if linea is not None:
+                self.cola.put(("rx", linea))
 
     def enviar(self, linea: str) -> None:
         with self._lock:
