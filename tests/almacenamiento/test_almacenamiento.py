@@ -78,8 +78,11 @@ def test_preferencias_guardar_cargar_y_archivo_roto(tmp_path, monkeypatch):
     monkeypatch.setenv("DUINOVISOR_AJUSTES", str(ruta))
     assert preferencias.cargar() == preferencias.POR_DEFECTO              # no existe
     assert preferencias.guardar({"tema": "oscuro", "acento": "ambar", "otra": 1})
-    assert preferencias.cargar() == {"tema": "oscuro", "acento": "ambar"}
+    assert preferencias.cargar() == {**preferencias.POR_DEFECTO, "tema": "oscuro", "acento": "ambar"}
+    assert preferencias.guardar({**preferencias.POR_DEFECTO, "auto_conectar": False, "vista_clima": "termometro"})
+    leido = preferencias.cargar()
+    assert leido["auto_conectar"] is False and leido["vista_clima"] == "termometro"
     ruta.write_text("{roto", encoding="utf-8")
     assert preferencias.cargar() == preferencias.POR_DEFECTO
-    ruta.write_text('{"tema": 5}', encoding="utf-8")
+    ruta.write_text('{"tema": 5, "auto_conectar": "no"}', encoding="utf-8")       # tipos equivocados
     assert preferencias.cargar() == preferencias.POR_DEFECTO

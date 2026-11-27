@@ -1,8 +1,8 @@
 """Ventana de DuinoVisor (Tkinter): une vistas y controladores.
 
-Dos vistas: «Luces» (el semáforo, o la protoboard, en el centro; al hacer clic en una luz se edita en el
-panel de la derecha) y «Clima» (temperatura, humedad, gráfica, avisos y semáforo térmico). Lo técnico
-(puerto, registro, milisegundos, PWM) queda detrás de «Mostrar detalles».
+Tres pestañas: «Luces» (el semáforo, o la protoboard, en el centro; al hacer clic en una luz se edita en el
+panel de la derecha), «Clima» (temperatura, humedad, gráfica, avisos y semáforo térmico) y «Configuración»
+(conexión, sensor y apariencia). Lo técnico (registro, milisegundos, PWM) queda detrás de «Mostrar detalles».
 
 El semáforo, la protoboard y los chips espejan lo que hace el Arduino: se calculan con el mismo modelo que el
 sketch, a partir de lo que la placa confirmó con OK.
@@ -38,15 +38,16 @@ from duinovisor.ui.controladores.espejo import EspejoMixin, apagados
 from duinovisor.ui.controladores.secuencias import SecuenciasMixin
 from duinovisor.ui.controladores.sensor import SensorMixin
 from duinovisor.ui.estado_led import LedUI
-from duinovisor.ui.vistas.ajustes import AjustesMixin
+from duinovisor.ui.vistas.acerca import AcercaMixin
 from duinovisor.ui.vistas.cabecera import CabeceraMixin
 from duinovisor.ui.vistas.clima import ClimaMixin
+from duinovisor.ui.vistas.configuracion import ConfiguracionMixin
 from duinovisor.ui.vistas.detalles import DetallesMixin
 from duinovisor.ui.vistas.luces import LucesMixin
 from duinovisor.ui.widgets.grafica import MAX_LECTURAS
 
 
-class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
+class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMixin, AcercaMixin,
           ConexionMixin, EnvioMixin, EspejoMixin, SecuenciasMixin, ArchivosMixin, SensorMixin, tk.Tk):
     def __init__(self, demo: bool = False):
         super().__init__()
@@ -83,7 +84,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
         self._ultima = None                          # (temperatura, humedad) o None
         self._estado_tipo = "off"
         self._construido = False
-        self._ventana_ajustes = None
+        self._ventana_acerca = None
         self._bloqueo_editor = None
 
         self._crear_variables()
@@ -95,8 +96,10 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
         self.after(POLL_MS, self._ciclo)
         if demo:
             self.conectar_demo()
-        else:
+        elif self.prefs["auto_conectar"]:
             self.buscar_placa()
+        else:
+            self._poner_estado("Sin conexión · elige el puerto en Configuración", "off")
 
     def ahora_ms(self) -> float:
         return (time.monotonic() - self._t0) * 1000
@@ -112,7 +115,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
     def _crear_variables(self):
         self.paneles = {c: LedUI(c, self.al_cambiar) for c in COLORES}
         self.v_sel = tk.StringVar(value=ORDEN_SEMAFORO[0])        # LED que se edita
-        self.v_vista = tk.StringVar(value="semaforo")              # pestaña: semaforo (Luces) o clima
+        self.v_vista = tk.StringVar(value="semaforo")              # pestaña: semaforo (Luces), clima o config
         self.v_modo_luces = tk.StringVar(value="semaforo")         # semaforo o protoboard
         self.v_detalles = tk.BooleanVar(value=False)
         self.v_tema = tk.StringVar(value=T.tema_actual)
@@ -136,6 +139,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
         self.v_tmin, self.v_tmax = tk.StringVar(value="22"), tk.StringVar(value="28")
         self.v_alarmas = tk.BooleanVar(value=False)
         self.v_amax_t, self.v_amax_h = tk.StringVar(value="35"), tk.StringVar(value="80")
+        self._crear_variables_config()
 
         self.v_sel.trace_add("write", lambda *_: self._al_elegir_led())
         self.v_vista.trace_add("write", lambda *_: self.mostrar_vista(self.v_vista.get()))
@@ -194,6 +198,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
         self.vistas = {}
         self._construir_luces(cuerpo)
         self._construir_clima(cuerpo)
+        self._construir_config(cuerpo)
         self._construir_detalles()
 
         self._construido = True
@@ -209,7 +214,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
         self._texto_sem = None
 
     def mostrar_vista(self, nombre: str):
-        """Cambia entre Luces (semaforo) y Clima. No toca nada de lo aplicado en el Arduino."""
+        """Cambia entre Luces (semaforo), Clima y Configuración. No toca nada de lo aplicado en el Arduino."""
         if self.v_vista.get() != nombre:
             self.v_vista.set(nombre)
             return

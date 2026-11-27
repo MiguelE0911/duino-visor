@@ -307,7 +307,7 @@ def test_cambiar_de_vista_no_pierde_la_configuracion(gui):
     assert app.vista_actual == "clima"
     app.mostrar_vista("semaforo")
     assert app.paneles["R"].v_modo.get() == "ON"
-    assert set(app.vistas) == {"semaforo", "clima"}
+    assert set(app.vistas) == {"semaforo", "clima", "config"}
 
 
 # ------------------------------------------------------------------ interfaz nueva (luces, ritmos, tema)
@@ -357,9 +357,54 @@ def test_cambiar_tema_conserva_todo(gui):
     gui.v_tema.set("oscuro")
     gui.v_acento.set("violeta")
     assert T.tema_actual == "oscuro" and T.ACENTO == T.ACENTOS["violeta"][2]
-    assert preferencias.cargar() == {"tema": "oscuro", "acento": "violeta"}
+    assert preferencias.cargar() == {**preferencias.POR_DEFECTO, "tema": "oscuro", "acento": "violeta"}
     assert gui.aplicado is aplicado and gui.paneles["G"].v_modo.get() == "ON"
     assert list(gui.grafica.temperaturas)[-1] == 24.0                    # la gráfica nueva tiene el historial
     assert ("línea de prueba", "info") in gui._lineas_log
     gui.alternar_tema()
     assert T.tema_actual == "claro"
+
+
+# ------------------------------------------------------------------ configuración y acerca de
+def test_configuracion_es_una_pestana_y_sobrevive_al_cambio_de_tema(gui):
+    gui.v_vista.set("config")
+    assert gui.vista_actual == "config"
+    gui.v_tema.set("oscuro")                                             # reconstruye la ventana
+    assert gui.vista_actual == "config"
+
+
+def test_periodo_del_sensor_con_selector_y_valor_exacto(gui):
+    assert gui.v_dht.get() == "2000" and gui.v_dht_preset.get() == "2000"
+    gui.v_dht_preset.set("5000")                                         # elegir «5 s»
+    assert gui.v_dht.get() == "5000"
+    gui.v_dht.set("1234")                                                # a medida desde los detalles
+    assert gui.v_dht_preset.get() == ""
+    gui.v_dht.set("60000")
+    assert gui.v_dht_preset.get() == "60000"
+    enviar_y_esperar(gui, gui.aplicar)
+    assert gui.sim.periodo_dht == 60000
+
+
+def test_conexion_automatica_se_recuerda(gui, monkeypatch):
+    from duinovisor.almacenamiento import preferencias
+    gui.v_auto.set(False)
+    assert preferencias.cargar()["auto_conectar"] is False
+    from duinovisor.ui import app as g
+    buscadas = []
+    monkeypatch.setattr(g.App, "buscar_placa", lambda self: buscadas.append(1))
+    otra = g.App(demo=False)                                             # sin demo y sin conexión automática
+    try:
+        assert not buscadas and not otra.enlace.conectado
+        assert "Configuración" in otra.v_estado.get()
+    finally:
+        otra.enlace.cerrar()
+
+
+def test_acerca_de_se_abre_una_sola_vez(gui):
+    gui.abrir_acerca()
+    ventana = gui._ventana_acerca
+    assert ventana is not None
+    gui.abrir_acerca()
+    assert gui._ventana_acerca is ventana
+    gui._cerrar_acerca()
+    assert gui._ventana_acerca is None

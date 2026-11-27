@@ -56,9 +56,6 @@ class ClimaMixin:
         etiqueta(tter.contenido, "Pulsa «Aplicar cambios» para enviarlo al Arduino.", f, T.TAM_PEQ, T.TEXTO_3).grid(
             row=3, column=0, columnspan=3, sticky="w", pady=(self._px(6), 0))
 
-        self.t_sensor = Tarjeta(izq, "Sensor (detalles)", f)
-        self._fila_numero(self.t_sensor.contenido, 0, "Leer el sensor cada", self.v_dht, "ms", ancho=7)
-
         thist = Tarjeta(vc, "Últimos minutos", f, llenar=True)
         thist.grid(row=0, column=1, sticky="nsew", padx=(self._px(7), 0), pady=(0, sep))
         etiqueta(thist.extra, "● temperatura (°C)  ", f, T.TAM_PEQ, T.ACENTO).pack(side="left")
