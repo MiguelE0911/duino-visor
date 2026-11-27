@@ -32,6 +32,7 @@ from duinovisor.hardware.simulador import ArduinoSimulado
 from duinovisor.ui import tema as T
 from duinovisor.ui.constantes import NOMBRE_LUZ, ORDEN_SEMAFORO, POLL_MS, VISTAS_CLIMA
 from duinovisor.ui.controladores.archivos import ArchivosMixin
+from duinovisor.ui.controladores.cambios import CambiosMixin
 from duinovisor.ui.controladores.conexion import ConexionMixin
 from duinovisor.ui.controladores.envio import EnvioMixin
 from duinovisor.ui.controladores.espejo import EspejoMixin, apagados
@@ -44,11 +45,13 @@ from duinovisor.ui.vistas.clima import ClimaMixin
 from duinovisor.ui.vistas.configuracion import ConfiguracionMixin
 from duinovisor.ui.vistas.detalles import DetallesMixin
 from duinovisor.ui.vistas.luces import LucesMixin
+from duinovisor.ui.widgets.avisos import BarraCambios
 from duinovisor.ui.widgets.grafica import MAX_LECTURAS
 
 
 class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMixin, AcercaMixin,
-          ConexionMixin, EnvioMixin, EspejoMixin, SecuenciasMixin, ArchivosMixin, SensorMixin, tk.Tk):
+          ConexionMixin, EnvioMixin, EspejoMixin, SecuenciasMixin, ArchivosMixin, SensorMixin, CambiosMixin,
+          tk.Tk):
     def __init__(self, demo: bool = False):
         super().__init__()
         T.ESCALA = self._escala()
@@ -86,6 +89,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMix
         self._construido = False
         self._ventana_acerca = None
         self._bloqueo_editor = None
+        self._iniciar_cambios()
 
         self._crear_variables()
         self._estilo()
@@ -122,7 +126,6 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMix
         self.v_tema = tk.StringVar(value=T.tema_actual)
         self.v_acento = tk.StringVar(value=T.acento_actual)
         self.v_estado = tk.StringVar(value="Sin conexión")
-        self.v_pendiente = tk.StringVar(value="")
         self.v_puerto = tk.StringVar()
         self.v_sem = tk.StringVar(value="Sin conexión")
         self.v_titulo_editor = tk.StringVar(value=NOMBRE_LUZ[ORDEN_SEMAFORO[0]])
@@ -204,6 +207,9 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMix
         self._construir_clima(cuerpo)
         self._construir_config(cuerpo)
         self._construir_detalles()
+        self.barra_cambios = BarraCambios(self, self.f, al_cerrar=self._cerrar_barra)
+        self.barra_cambios.grid(row=4, column=0, sticky="ew", padx=self._px(22), pady=(0, self._px(10)))
+        self.barra_cambios.grid_remove()
 
         self._construido = True
         self.mostrar_vista(self.v_vista.get())
@@ -216,6 +222,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMix
         self._actualizar_banner()
         self._poner_estado(self.v_estado.get(), self._estado_tipo)
         self.actualizar_puertos(silencioso=True)
+        self._actualizar_barra()
         self._texto_sem = None
 
     def mostrar_vista(self, nombre: str):
@@ -238,18 +245,14 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMix
         self._actualizar_botones_seq()
         self._actualizar_luces(bloqueado)
         pendiente = False
-        if not self.enlace.conectado:
-            self.v_pendiente.set("")
-        else:
+        if self.enlace.conectado:
             try:
-                pasos = plan(*self.leer_ui(), self.aplicado)
-                pendiente = bool(pasos)
-                self.v_pendiente.set("Tienes cambios sin aplicar" if pasos else "")
+                pendiente = bool(plan(*self.leer_ui(), self.aplicado))
             except ValueError:
                 pendiente = True
-                self.v_pendiente.set("Revisa los valores: hay alguno incorrecto")
         if hasattr(self, "b_aplicar"):
             self.b_aplicar.configurar(estilo="relleno" if pendiente or not self.enlace.conectado else "suave")
+        self._actualizar_barra()
 
     # ------------------------------------------------------------------ bucle y recepción
     def _ciclo(self):

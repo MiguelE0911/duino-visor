@@ -52,7 +52,10 @@ class EnvioMixin:
             return
         if not pasos:
             self.log("Nada que enviar: ya está aplicado.", "info")
+            self._marcar_base()
+            self.al_cambiar()
             return
+        self._empieza_aplicar(len(pasos))
         self._enviar_pasos(pasos)
 
     def _enviar_siguiente(self, reintento: bool = False):
@@ -60,10 +63,12 @@ class EnvioMixin:
             if not self.pendientes:
                 self.paso_actual = None
                 self.log("Aplicado.", "info")
+                self._termina_envio()
                 self.al_cambiar()
                 return
             self.paso_actual = self.pendientes.pop(0)
             self._intentos = 0
+            self._actualizar_barra()
         paso = self.paso_actual
         try:
             self.enlace.enviar(paso.texto)
@@ -93,4 +98,5 @@ class EnvioMixin:
         self._cancelar_timeout()
         self.pendientes, self.paso_actual = [], None
         self.log(mensaje, "err")
+        self._falla_envio(mensaje)
         self.al_cambiar()

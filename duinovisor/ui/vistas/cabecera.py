@@ -34,13 +34,8 @@ class CabeceraMixin:
                                ancho=340, columnas=3, alto_fila=40, fuente=f, fondo=T.FONDO, estilo="pista")
         self.tabs.grid(row=0, column=1)
 
-        lado = tk.Frame(cab, bg=T.FONDO)
-        lado.grid(row=0, column=2, sticky="e")
-        der = tk.Frame(lado, bg=T.FONDO)
-        der.pack(anchor="e")
-        # El aviso va debajo de los botones: en la misma fila no cabe junto a las tres pestañas.
-        etiqueta(lado, "", f, T.TAM_PEQ, T.ACENTO, T.FONDO, textvariable=self.v_pendiente).pack(
-            anchor="e", padx=(0, self._px(100)))
+        der = tk.Frame(cab, bg=T.FONDO)          # los cambios sin aplicar se avisan en la barra del pie
+        der.grid(row=0, column=2, sticky="e")
         self.b_detalles = BotonPildora(der, "Mostrar detalles", lambda: self.v_detalles.set(not self.v_detalles.get()),
                                        ancho=150, alto=40, estilo="fantasma", fuente=f, fondo=T.FONDO)
         self.b_detalles.pack(side="left", padx=(0, self._px(8)))

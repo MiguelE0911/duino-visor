@@ -440,3 +440,45 @@ def test_ficha_del_led_elegido_y_del_sensor(gui):
     gui.v_seq.set("VIAL")
     enviar_y_esperar(gui, gui.alternar_secuencia)
     assert "animación" in dict(gui._ficha_actual().filas)["Qué hace"]
+
+
+# ------------------------------------------------------------------ barra de cambios sin aplicar
+def test_barra_de_cambios_pendiente_deshacer_y_cerrar(gui):
+    barra, led = gui.barra_cambios, gui.paneles[COLORES[0]]
+    assert barra.estado is None                                         # recién conectado: nada que avisar
+    led.v_modo.set("ON")
+    assert barra.estado == "pendiente" and barra.boton[0] == "Aplicar cambios"
+    led.v_modo.set("OFF")                                               # deshacer el cambio quita el aviso
+    assert barra.estado is None
+    led.v_modo.set("ON")
+    gui._cerrar_barra()                                                 # la ×: se oculta hasta el próximo cambio
+    gui.al_cambiar()
+    assert barra.estado is None
+    led.v_brillo.set(100)
+    assert barra.estado == "pendiente"
+
+
+def test_barra_de_cambios_envio_aplicado_y_error(gui):
+    barra, led = gui.barra_cambios, gui.paneles[COLORES[0]]
+    led.v_modo.set("ON")
+    barra.boton[1]()                                                    # botón «Aplicar cambios» de la barra
+    assert barra.estado == "enviando" and barra.progreso is not None
+    assert esperar(gui, lambda: terminado(gui))
+    assert barra.estado == "listo"
+    gui._quitar_listo()
+    assert barra.estado is None                                         # la ventana es la nueva base
+    gui.v_dht.set("50")                                                 # fuera de rango
+    assert barra.estado == "error"
+    gui.v_dht.set("2000")
+    assert barra.estado is None
+
+
+def test_barra_de_cambios_cuando_el_arduino_rechaza(gui):
+    gui.paneles[COLORES[0]].v_modo.set("ON")
+    gui.sim.procesar = lambda t: ["ERR no quiero"]
+    gui.aplicar()
+    assert esperar(gui, lambda: terminado(gui))
+    assert gui.barra_cambios.estado == "fallo" and "no quiero" in gui.barra_cambios.detalle
+    assert gui.barra_cambios.boton[0] == "Reintentar"
+    gui.desconectar()
+    assert gui.barra_cambios.estado is None
