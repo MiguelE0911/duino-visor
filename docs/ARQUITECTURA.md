@@ -50,8 +50,14 @@ como una sola clase.
 | `vistas/acerca.py` | Ventana «Acerca de» |
 | `controladores/conexion.py` | Buscar la placa, conectar y desconectar (en hilos, vía `cola_ui`) |
 | `controladores/envio.py` | Leer la ventana, armar los pasos y enviarlos uno a uno esperando OK/ERR |
+| `controladores/cambios.py` | Qué muestra la barra de cambios sin aplicar (base, envío, aplicado, fallo) |
 | `controladores/espejo.py` | Lo que el Arduino está haciendo, calculado desde lo confirmado, y la ficha del componente elegido |
 | `fichas.py` | Textos de las fichas de la protoboard (sin Tkinter; se prueban solos) |
+| `widgets/protoboard.py` | El lienzo de la protoboard: zoom, arrastre, teclado, paso del ratón, barra de herramientas y animación |
+| `widgets/dibujo_placa.py` | Cómo se dibuja cada pieza (placa, protoboard, cables, resistencias, LEDs, DHT11) |
+| `widgets/ficha.py` | La tarjeta flotante de la ficha |
+| `widgets/geometria.py` | Cuentas sin Tkinter: curvas de los cables, degradados, encaje y zoom |
+| `widgets/avisos.py` | La barra del pie (cambios sin aplicar) |
 | `controladores/secuencias.py` | Iniciar, pausar, seguir y detener animaciones |
 | `controladores/archivos.py` | Escenas y CSV (diálogos de archivo) |
 | `controladores/sensor.py` | Historial de lecturas y alarmas |
@@ -85,3 +91,11 @@ la decisión no necesita la ventana para nada, en `dominio/`.
 
 Cada cambio en `dominio/` lleva su prueba en `tests/dominio/`, y si toca el contrato con la placa, también
 en `tests/firmware/`.
+
+## Dibujar con Tkinter sin que se trabe
+
+El Canvas no tiene degradados, transparencias ni recorte: se simulan con franjas (`dibujo_placa.degradado_redondo`),
+capas de colores mezclados (`tema.mezclar`) y máscaras. Lo que cambia en cada fotograma (brillo de los LEDs,
+anillo de selección, corriente, ficha) se actualiza con `itemconfigure` y no redibuja la escena. Cuidado con
+`tag_raise`/`tag_lower` de capas grandes en cada fotograma: Tk repinta toda su superficie, y con la pantalla
+escalada (125 %, 150 %) el ciclo de 50 ms deja de dar abasto y la ventana se traba.

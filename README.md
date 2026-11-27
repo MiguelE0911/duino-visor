@@ -125,12 +125,17 @@ porque les falta el LED nuevo.
 - **Luces**: el semáforo ocupa el centro. Haz clic en una luz (o en su chip de abajo) y elige en el panel de la
   derecha qué hace: *Apagada*, *Encendida*, *Parpadea* o *Respira*, con su brillo y un ritmo *Lento / Normal /
   Rápido*. El conmutador **Semáforo | Protoboard** muestra el montaje real (placa, protoboard, resistencias,
-  cables y DHT11). En la protoboard:
-  - La rueda del ratón acerca o aleja alrededor del puntero, se arrastra para moverse, y los botones
-    **+ / − / Ajustar** (o un doble clic en un hueco) vuelven a mostrarlo todo.
-  - Un clic en un LED lo elige para editarlo; un clic en el DHT11 lo marca.
-  - Debajo aparece la **ficha** del componente elegido: qué es, a qué pin está conectado, qué hace y cómo está
-    ahora (brillo en vivo o la última lectura).
+  cables y DHT11, con sombras, relieve y LEDs que iluminan la protoboard). En la protoboard:
+  - **Navegar**: la rueda del ratón acerca o aleja alrededor del puntero (con zoom suave), se arrastra para
+    moverse y la barra flotante tiene **− / % / + / ajustar**. Con el teclado: + y −, 0 para verlo todo, las
+    flechas para moverse. Un doble clic en un hueco también lo muestra todo.
+  - **Explorar**: al pasar el ratón por una pieza se ilumina su cable hasta el pin del Arduino y aparece una
+    ayuda. Un clic en un LED lo elige para editarlo; un clic en el DHT11 lo marca. La pieza elegida tiene un
+    anillo que «respira»; si es un LED encendido, se ve la corriente recorrer su cable, y con cada lectura del
+    sensor un pulso viaja hasta el pin 2.
+  - **Ficha**: una tarjeta flotante con qué es la pieza, a qué está conectada, qué hace y cómo está ahora (con su
+    brillo o la humedad en vivo). Entra deslizándose, se cierra con × o Esc y se reabre con el botón **Ficha** o
+    al hacer clic en otra pieza. Su botón lleva al editor del LED o a la pestaña Clima.
 
   A la derecha, las **Animaciones** (secuencias). Los cambios se envían con **Aplicar cambios** (o Ctrl+Intro).
 - **Clima**: temperatura y humedad, la gráfica de los últimos minutos, los avisos y el semáforo según la
@@ -141,6 +146,9 @@ porque les falta el LED nuevo.
   - **Sensor**: cada cuánto se lee (de 1 s a 1 min; con los detalles abiertos, el valor exacto en ms).
   - **Apariencia**: tema claro u oscuro y color de acento (el botón de la luna o el sol también cambia el tema).
   - Las preferencias se guardan en `%APPDATA%/DuinoVisor/ajustes.json` (en Linux, `~/.config/duinovisor/`).
+- **Cambios sin aplicar**: en cuanto cambias algo que el Arduino todavía no tiene, sube una barra al pie de la
+  ventana con el botón **Aplicar cambios**. Al enviar muestra el progreso y después «Cambios aplicados»; si el
+  Arduino rechaza una orden explica el motivo y ofrece reintentar. Si deshaces el cambio, la barra se va.
 - **Mostrar detalles** enseña lo técnico: el registro de órdenes enviadas y recibidas, los milisegundos
   exactos de cada LED, el valor PWM y el pin.
 - **⋯** abre el menú: guardar o cargar escena, exportar CSV, **Configuración** y **Acerca de DuinoVisor**
@@ -216,7 +224,7 @@ secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en ca
 
 ```bash
 pip install -e ".[pruebas]"
-python -m pytest -q             # 148 pruebas
+python -m pytest -q             # 157 pruebas
 ruff check duinovisor tests     # lint (reglas fijadas en pyproject.toml)
 ```
 
