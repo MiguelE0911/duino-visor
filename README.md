@@ -10,36 +10,54 @@ CSV y alarmas por temperatura o humedad.
 
 ## Contenido
 
-| Ruta | Qué es |
-| --- | --- |
-| `arduino/control_leds/control_leds.ino` | Sketch (carpeta y archivo con el mismo nombre, como pide el IDE) |
-| `main.py` | Arranque; `--demo` usa el Arduino simulado |
-| `gui.py` | Ventana Tkinter: pestañas Luces y Clima, editor del LED elegido, panel de detalles técnicos y Ajustes |
-| `tema.py`, `widgets.py` | Temas claro y oscuro con 5 colores de acento, y widgets propios dibujados en Canvas (tarjetas, píldoras, selectores, deslizador, interruptor, medidor, barras, chips de LED y semáforo 3D) |
-| `vista_placa.py` | Vista de protoboard: placa, protoboard, LEDs con su resistencia y DHT11, con los pines del sketch |
-| `preferencias.py` | Guarda el tema y el color elegidos (`%APPDATA%\DuinoVisor\ajustes.json` o `~/.config/duinovisor/`) |
-| `protocol.py` | Órdenes, validación, interpretación de líneas, qué enviar al pulsar Aplicar, tabla de secuencias y modelo local que espeja al Arduino (funciones puras) |
-| `arduino_link.py` | Puertos, autodetección, hilo lector con cola, envío |
-| `grafica.py` | Gráfica de área en vivo sobre un Canvas |
-| `escenas.py`, `exportar.py`, `alarmas.py` | Escenas `.json` validadas, CSV de lecturas y alarmas con histéresis |
-| `simulador.py` | Arduino falso con la misma lógica del sketch |
-| `docs/vista_previa.png`, `docs/vista_protoboard.png` | Capturas de la ventana (modo demo, tema claro) |
-| `tests/` | `test_protocol`, `test_extras`, `test_simulador`, `test_gui_logica` (Python) y `test_sketch` (compila el `.ino` con g++ contra un Arduino simulado) |
+El código está organizado en capas; cada una solo depende de las de dentro (la prueba
+`tests/test_arquitectura.py` lo hace cumplir). Detalles y guía para añadir funciones en
+[`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
+
+```
+duino-visor/
+├── main.py                     atajo: python main.py [--demo]
+├── pyproject.toml              paquete, dependencias y configuración de pytest
+├── duinovisor/
+│   ├── __main__.py             arranque (python -m duinovisor)
+│   ├── dominio/                reglas puras: sin Tkinter, sin puerto serie, sin archivos
+│   │   ├── leds.py             LedConfig, validación y brillo en cada instante
+│   │   ├── protocolo.py        órdenes, respuestas y qué enviar al pulsar Aplicar
+│   │   ├── secuencias.py       tabla de animaciones y su copia local
+│   │   ├── termometro.py       semáforo térmico con histéresis
+│   │   ├── alarmas.py          alarmas por máximo/mínimo con histéresis
+│   │   └── placa.py            pines del montaje (iguales que en el sketch)
+│   ├── hardware/               enlace.py (puerto serie, autodetección) y simulador.py
+│   ├── almacenamiento/         escenas.py, exportar.py (CSV) y preferencias.py
+│   └── ui/                     única capa con Tkinter
+│       ├── app.py              App: une vistas y controladores, bucle y recepción
+│       ├── tema.py             temas claro/oscuro, acentos y tipografía
+│       ├── constantes.py       textos y ajustes compartidos de la ventana
+│       ├── estado_led.py       variables editables de cada LED
+│       ├── vistas/             cabecera, luces, clima, detalles, ajustes (crean widgets)
+│       ├── controladores/      conexión, envío, espejo, secuencias, archivos, sensor
+│       └── widgets/            base, contenedores, botones, controles, luces, indicadores,
+│                               grafica y protoboard (dibujados en Canvas)
+├── firmware/control_leds/      sketch (carpeta y archivo con el mismo nombre, como pide el IDE)
+├── docs/                       ARQUITECTURA.md y capturas
+└── tests/                      misma estructura: dominio/, hardware/, almacenamiento/, ui/,
+                                firmware/ (compila el .ino con g++) y test_arquitectura.py
+```
 
 ## Instalación y uso
 
 ```bash
-pip install pyserial            # Python 3.10+
+pip install -e .                # Python 3.10+; instala pyserial y el comando «duinovisor»
 # Linux (Ubuntu/Debian): Tkinter y permisos del puerto
 sudo apt install python3-tk
 sudo usermod -aG dialout $USER  # cerrar sesión y volver a entrar
 
-python main.py --demo           # sin placa
-python main.py                  # con la placa: se conecta sola
+python -m duinovisor --demo     # sin placa (también: python main.py --demo)
+python -m duinovisor            # con la placa: se conecta sola
 ```
 
 Cargar el sketch: en el IDE de Arduino instala las librerías **DHT sensor library** y
-**Adafruit Unified Sensor**, abre `control_leds.ino`, elige la placa (*Arduino 101*, o *Arduino UNO*) y sube.
+**Adafruit Unified Sensor**, abre `firmware/control_leds/control_leds.ino`, elige la placa (*Arduino 101*, o *Arduino UNO*) y sube.
 La app solo funciona con este sketch cargado: con otro (por ejemplo un ejemplo de la librería DHT11) la placa
 no responde a `PING`, la autodetección falla y las órdenes quedan «sin respuesta».
 Cierra el Monitor Serie antes de abrir la app (el puerto solo lo puede usar un programa).
@@ -112,7 +130,7 @@ La velocidad escala todas las duraciones (mínimo 20 ms por paso). Una orden `LE
 cancela lo anterior: **la última orden manda**.
 
 El semáforo 3D, la protoboard y los chips de cada luz no leen nada del Arduino: calculan lo mismo con el modelo de
-`protocol.py` (`SecuenciaLocal`, `brillo_en`, `zona_termo`), arrancando en el instante en que el Arduino
+`duinovisor/dominio` (`SecuenciaLocal`, `brillo_en`, `zona_termo`), arrancando en el instante en que el Arduino
 confirmó la orden con `OK`. Las pruebas comparan ese modelo con el sketch milisegundo a milisegundo.
 Pausar, seguir o detener en la app manda la orden al Arduino, y si se desconecta o se cierra la app con una
 secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en cambio, sigue funcionando solo.
@@ -163,7 +181,8 @@ secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en ca
 ## Pruebas
 
 ```bash
-python -m pytest tests -q       # el test del sketch necesita g++
+pip install -e ".[pruebas]"
+python -m pytest -q             # las pruebas del sketch necesitan g++
 ```
 
 ## Extras pendientes
