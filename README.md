@@ -118,6 +118,24 @@ porque les falta el LED nuevo.
 | `DATA T=24.0 H=51.0` / `DATA ERR` | Cada periodo del DHT / el sensor no respondió |
 | `OK …` / `ERR <motivo>` | Respuesta a cada orden |
 
+### Por Bluetooth LE (celular, solo Arduino 101)
+
+Las órdenes y respuestas son **las mismas** que por el puerto serie; solo cambia el transporte.
+La placa se anuncia como **`DuinoVisor`** con los UUID del *Nordic UART Service*, así que también se
+puede probar con apps genéricas como nRF Connect o Serial Bluetooth Terminal.
+
+| Característica | UUID | Uso |
+| --- | --- | --- |
+| Servicio | `6E400001-B5A3-F393-E0A9-E50E24DCCA9E` | |
+| RX (escribir) | `6E400002-B5A3-F393-E0A9-E50E24DCCA9E` | El celular envía órdenes terminadas en `\n`, en trozos de hasta 20 bytes |
+| TX (notificar) | `6E400003-B5A3-F393-E0A9-E50E24DCCA9E` | La placa envía las respuestas en trozos de hasta 20 bytes; cada línea termina en `\n` |
+
+- Una línea puede llegar partida en varios trozos (p. ej. `STATE SEQ FANTASTICO 100 RUN`): hay que juntar
+  hasta el `\n`. Las notificaciones salen separadas al menos 15 ms.
+- Cada orden se responde por el canal que la envió; `DATA` sale por los dos.
+- Al desconectarse el celular, la placa descarta lo pendiente y vuelve a anunciarse.
+- En placas sin BLE (p. ej. UNO) el sketch compila igual, solo con el puerto serie.
+
 ## La ventana
 
 ![DuinoVisor en tema claro](docs/vista_previa.png)
@@ -224,7 +242,7 @@ secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en ca
 
 ```bash
 pip install -e ".[pruebas]"
-python -m pytest -q             # 162 pruebas
+python -m pytest -q             # 170 pruebas
 ruff check duinovisor tests     # lint (reglas fijadas en pyproject.toml)
 ```
 

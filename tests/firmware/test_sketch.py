@@ -274,3 +274,66 @@ def test_brillo_en_coincide_con_el_sketch_en_fade_y_blink(binario):
         if t in real:
             valor = real[t]
         assert valor == esperado, f"t={t}"
+
+
+# ---------------------------------------------------------------- canal BLE (celular)
+def respuestas_ble(salida):
+    return [x[3:] for x in salida if x.startswith("b< ")]
+
+
+def notificaciones(salida):
+    """[(ms, bytes)] de cada notificación BLE. El shim aborta si un trozo pasa de 20 bytes."""
+    return [(int(m.group(1)), int(m.group(2))) for x in salida if (m := re.match(r"@(\d+) NOTIF (\d+)", x))]
+
+
+def test_ble_ping(binario):
+    s = correr(binario, "ble on", "b> PING", "t 50")
+    assert respuestas_ble(s) == ["PONG OAC-LEDS 1"]
+    assert respuestas(s) == []                                   # el puerto serie no se entera
+
+
+def test_ble_orden_partida_en_trozos(binario):
+    orden = f"LED {COLORES[-1]} BLINK 255 500 250"                 # 25 caracteres: llega en 2 trozos
+    s = correr(binario, "ble on", f"b> {orden}", "t 50", "pwm")
+    assert respuestas_ble(s) == [f"OK LED {COLORES[-1]}"]
+    assert ultimo_pwm(s)[PINES[COLORES[-1]]] == 255
+
+
+def test_ble_status_igual_que_por_serie_y_en_trozos(binario):
+    por_serie = respuestas(correr(binario, "> SEQ FANTASTICO", "> STATUS"))
+    s = correr(binario, "ble on", "b> SEQ FANTASTICO", "b> STATUS", "t 300")
+    assert sin_datos(respuestas_ble(s)) == por_serie
+    tiempos = [t for t, _ in notificaciones(s)]
+    assert len(tiempos) > 3
+    assert all(b - a >= 15 for a, b in zip(tiempos, tiempos[1:]))     # sin saturar la pila BLE
+
+
+def test_cada_canal_recibe_su_respuesta(binario):
+    c = COLORES[0]
+    s = correr(binario, "ble on", "> PING", f"b> LED {c} ON 10", "t 50")
+    assert respuestas(s) == ["PONG OAC-LEDS 1"]
+    assert respuestas_ble(s) == [f"OK LED {c}"]
+
+
+def test_data_sale_por_ambos_canales(binario):
+    s = correr(binario, "ble on", "> DHT 1000", "dht 24.0 51.0", "t 1100")
+    assert respuestas(s) == ["OK DHT", "DATA T=24.0 H=51.0"]
+    assert respuestas_ble(s) == ["DATA T=24.0 H=51.0"]
+
+
+def test_ble_linea_larga_se_descarta(binario):
+    s = correr(binario, "ble on", "b> " + "A" * 100, "b> PING", "t 100")
+    assert respuestas_ble(s) == ["ERR linea larga", "PONG OAC-LEDS 1"]
+
+
+def test_ble_sin_suscripcion_ejecuta_pero_no_notifica(binario):
+    c = COLORES[0]
+    s = correr(binario, "ble nosub", f"b> LED {c} ON 10", "t 50", "pwm")
+    assert notificaciones(s) == []
+    assert ultimo_pwm(s)[PINES[c]] == 10
+
+
+def test_ble_al_desconectar_vuelve_a_anunciar_y_olvida_lo_pendiente(binario):
+    s = correr(binario, "ble on", "b> STATUS", "ble off", "t 100", "ble on", "b> PING", "t 100")
+    assert sum(1 for x in s if x.endswith("ANUNCIO")) == 2             # al arrancar y al desconectarse
+    assert respuestas_ble(s) == ["PONG OAC-LEDS 1"]                    # nada del STATUS anterior

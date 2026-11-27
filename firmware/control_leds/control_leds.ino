@@ -3,15 +3,27 @@
  *
  * 3 LEDs con PWM (pines 3, 5, 6, tabla `leds[]`) + sensor DHT11 (pin 2).
  * Placa: Arduino 101 (en la 101 solo 3, 5, 6 y 9 tienen PWM; en un UNO también valen).
- * Protocolo de texto por puerto serie a 9600 baudios, una orden por línea.
+ * Protocolo de texto, una orden por línea, por dos canales a la vez:
+ *   - puerto serie a 9600 baudios (programa de escritorio);
+ *   - Bluetooth LE, solo en el 101 (aplicación del celular): servicio con los UUID del
+ *     «Nordic UART Service»; el celular escribe las órdenes en RX y recibe las respuestas
+ *     por notificaciones de TX, en trozos de hasta 20 bytes. Cada línea termina en '\n'.
+ * Las órdenes y respuestas son idénticas por ambos canales. Cada orden se responde por el
+ * canal que la envió; las lecturas del sensor (DATA) salen por los dos.
  * NUNCA se usa delay(): todo se planifica con millis().
  *
  * Librerías (Gestor de librerías del IDE):
  *   - DHT sensor library (Adafruit)
  *   - Adafruit Unified Sensor
+ *   - CurieBLE (viene con el paquete de placas «Intel Curie Boards»)
  */
 #include <Arduino.h>
 #include <DHT.h>
+
+#if defined(ARDUINO_ARCH_ARC32)      // Arduino 101: tiene Bluetooth LE
+#define CON_BLE
+#include <CurieBLE.h>
+#endif
 
 #define PIN_DHT      2
 #define MAX_LINEA    63      // más largo que esto se descarta
@@ -78,10 +90,13 @@ bool     seqPausa = false;
 uint32_t seqInicioPaso = 0;
 uint32_t seqRestante = 0;           // ms que le faltaban al paso al pausar
 
-// ---- búfer de entrada ----
-char    linea[MAX_LINEA + 1];
-uint8_t largo = 0;
-bool    desbordada = false;
+// ---- búferes de entrada: uno por canal, para no mezclar órdenes a medias ----
+struct Entrada {
+  char    linea[MAX_LINEA + 1];
+  uint8_t largo;
+  bool    desbordada;
+};
+Entrada entradaSerie = { {0}, 0, false };
 
 // ======================================================================
 // Utilidades
@@ -191,48 +206,49 @@ void actualizarSecuencia(uint32_t ahora) {
   if (cambio) aplicarPasoSeq();
 }
 
-void ordenSeq(char **tok, uint8_t n, uint32_t ahora) {
-  if (n < 2 || n > 3) { Serial.println("ERR uso SEQ nombre [vel] | OFF | PAUSA | SEGUIR"); return; }
+void ordenSeq(char **tok, uint8_t n, uint32_t ahora, Print &out) {
+  if (n < 2 || n > 3) { out.println("ERR uso SEQ nombre [vel] | OFF | PAUSA | SEGUIR"); return; }
   if (strcmp(tok[1], "OFF") == 0) {
     if (seqDef != NULL) { seqDef = NULL; seqPausa = false; apagarTodos(); }
-    Serial.println("OK SEQ");
+    out.println("OK SEQ");
   } else if (strcmp(tok[1], "PAUSA") == 0) {
-    if (seqDef == NULL) { Serial.println("ERR sin secuencia"); return; }
+    if (seqDef == NULL) { out.println("ERR sin secuencia"); return; }
     if (!seqPausa) {
       uint32_t dur = durPaso(), t = ahora - seqInicioPaso;
       seqRestante = (t >= dur) ? 0 : dur - t;
       seqPausa = true;
     }
-    Serial.println("OK SEQ");
+    out.println("OK SEQ");
   } else if (strcmp(tok[1], "SEGUIR") == 0) {
-    if (seqDef == NULL) { Serial.println("ERR sin secuencia"); return; }
+    if (seqDef == NULL) { out.println("ERR sin secuencia"); return; }
     if (seqPausa) {
       seqInicioPaso = ahora - (durPaso() - seqRestante);
       seqPausa = false;
     }
-    Serial.println("OK SEQ");
+    out.println("OK SEQ");
   } else {
     const DefSeq *def = NULL;
     for (uint8_t i = 0; i < N_SECUENCIAS; i++) if (strcmp(tok[1], SECUENCIAS[i].nombre) == 0) def = &SECUENCIAS[i];
     if (def == NULL) {                                       // ERR secuencia VIAL FANTASTICO ALERTA
-      Serial.print("ERR secuencia");
-      for (uint8_t i = 0; i < N_SECUENCIAS; i++) { Serial.print(' '); Serial.print(SECUENCIAS[i].nombre); }
-      Serial.println();
+      out.print("ERR secuencia");
+      for (uint8_t i = 0; i < N_SECUENCIAS; i++) { out.print(' '); out.print(SECUENCIAS[i].nombre); }
+      out.println();
       return;
     }
     long vel = 100;
-    if (n == 3 && (!numero(tok[2], vel) || vel < 25 || vel > 400)) { Serial.println("ERR velocidad 25-400"); return; }
+    if (n == 3 && (!numero(tok[2], vel) || vel < 25 || vel > 400)) { out.println("ERR velocidad 25-400"); return; }
     termoActivo = false; zona = -1;
     seqDef = def; seqPaso = 0; seqVel = (uint16_t)vel; seqPausa = false; seqInicioPaso = ahora;
     aplicarPasoSeq();
-    Serial.println("OK SEQ");
+    out.println("OK SEQ");
   }
 }
 
 // ======================================================================
 // Procesamiento de órdenes
 // ======================================================================
-void procesarComando(char *texto) {
+// Ejecuta una orden y responde por `out`, el canal que la envió (serie o BLE).
+void procesarComando(char *texto, Print &out) {
   for (char *c = texto; *c; c++) if (*c >= 'a' && *c <= 'z') *c -= 32;   // a mayúsculas
 
   char *tok[MAX_TOKENS];
@@ -244,34 +260,34 @@ void procesarComando(char *texto) {
   long a, b, c;
 
   if (strcmp(tok[0], "PING") == 0) {
-    Serial.println("PONG OAC-LEDS 1");
+    out.println("PONG OAC-LEDS 1");
 
   } else if (strcmp(tok[0], "LED") == 0) {
-    if (n < 3)                      { Serial.println("ERR faltan argumentos"); return; }
+    if (n < 3)                      { out.println("ERR faltan argumentos"); return; }
     Led *l = buscarLed(tok[1]);
     if (l == NULL) {                                         // ERR led R G Y
-      Serial.print("ERR led");
-      for (uint8_t i = 0; i < N_LEDS; i++) { Serial.print(' '); Serial.print(leds[i].id); }
-      Serial.println();
+      out.print("ERR led");
+      for (uint8_t i = 0; i < N_LEDS; i++) { out.print(' '); out.print(leds[i].id); }
+      out.println();
       return;
     }
 
     if (strcmp(tok[2], "OFF") == 0) {
-      if (n != 3)                   { Serial.println("ERR argumentos"); return; }
+      if (n != 3)                   { out.println("ERR argumentos"); return; }
       cancelarAutomatismos();
       l->modo = M_OFF;
 
     } else if (strcmp(tok[2], "ON") == 0) {
-      if (n != 4)                   { Serial.println("ERR uso LED c ON brillo"); return; }
-      if (!numero(tok[3], a) || a < 0 || a > 255) { Serial.println("ERR brillo 0-255"); return; }
+      if (n != 4)                   { out.println("ERR uso LED c ON brillo"); return; }
+      if (!numero(tok[3], a) || a < 0 || a > 255) { out.println("ERR brillo 0-255"); return; }
       cancelarAutomatismos();
       l->modo = M_ON; l->brillo = (uint8_t)a;
 
     } else if (strcmp(tok[2], "BLINK") == 0) {
-      if (n != 6)                   { Serial.println("ERR uso LED c BLINK brillo on off"); return; }
-      if (!numero(tok[3], a) || a < 0 || a > 255) { Serial.println("ERR brillo 0-255"); return; }
+      if (n != 6)                   { out.println("ERR uso LED c BLINK brillo on off"); return; }
+      if (!numero(tok[3], a) || a < 0 || a > 255) { out.println("ERR brillo 0-255"); return; }
       if (!numero(tok[4], b) || !numero(tok[5], c) || b < 20 || c < 20 || b > 60000 || c > 60000) {
-        Serial.println("ERR tiempo 20-60000 ms"); return;
+        out.println("ERR tiempo 20-60000 ms"); return;
       }
       cancelarAutomatismos();
       l->modo = M_BLINK; l->brillo = (uint8_t)a;
@@ -279,83 +295,202 @@ void procesarComando(char *texto) {
       l->fase = true; l->ultimoCambio = ahora;
 
     } else if (strcmp(tok[2], "FADE") == 0) {
-      if (n != 5)                   { Serial.println("ERR uso LED c FADE brillo periodo"); return; }
-      if (!numero(tok[3], a) || a < 0 || a > 255) { Serial.println("ERR brillo 0-255"); return; }
-      if (!numero(tok[4], b) || b < 200 || b > 60000) { Serial.println("ERR periodo 200-60000 ms"); return; }
+      if (n != 5)                   { out.println("ERR uso LED c FADE brillo periodo"); return; }
+      if (!numero(tok[3], a) || a < 0 || a > 255) { out.println("ERR brillo 0-255"); return; }
+      if (!numero(tok[4], b) || b < 200 || b > 60000) { out.println("ERR periodo 200-60000 ms"); return; }
       cancelarAutomatismos();
       l->modo = M_FADE; l->brillo = (uint8_t)a;
       l->periodo = (uint16_t)b; l->ultimoCambio = ahora;
 
     } else {
-      Serial.println("ERR modo"); return;
+      out.println("ERR modo"); return;
     }
-    Serial.print("OK LED "); Serial.println(l->id);
+    out.print("OK LED "); out.println(l->id);
 
   } else if (strcmp(tok[0], "DHT") == 0) {
     if (n != 2 || !numero(tok[1], a) || a < 1000 || a > 3600000L) {
-      Serial.println("ERR periodo 1000-3600000 ms"); return;     // 1000 ms: límite del DHT11
+      out.println("ERR periodo 1000-3600000 ms"); return;     // 1000 ms: límite del DHT11
     }
     periodoDht = (uint32_t)a;
-    Serial.println("OK DHT");
+    out.println("OK DHT");
 
   } else if (strcmp(tok[0], "TERMO") == 0) {
     if (n == 2 && strcmp(tok[1], "OFF") == 0) {
       termoActivo = false; zona = -1; seqDef = NULL; seqPausa = false; apagarTodos();
-      Serial.println("OK TERMO");
+      out.println("OK TERMO");
     } else if (n == 3 && numero(tok[1], a) && numero(tok[2], b) && a < b) {
       termoMin = (float)a; termoMax = (float)b;
       termoActivo = true; zona = -1; seqDef = NULL; seqPausa = false; apagarTodos();   // se enciende con la próxima lectura
-      Serial.println("OK TERMO");
+      out.println("OK TERMO");
     } else {
-      Serial.println("ERR uso TERMO tmin tmax (tmin<tmax) | TERMO OFF");
+      out.println("ERR uso TERMO tmin tmax (tmin<tmax) | TERMO OFF");
     }
 
   } else if (strcmp(tok[0], "SEQ") == 0) {
-    ordenSeq(tok, n, ahora);
+    ordenSeq(tok, n, ahora, out);
 
   } else if (strcmp(tok[0], "STATUS") == 0) {
     for (uint8_t i = 0; i < N_LEDS; i++) {
-      Serial.print("STATE "); Serial.print(leds[i].id); Serial.print(' ');
-      Serial.print(nombreModo(leds[i].modo)); Serial.print(' ');
-      Serial.print(leds[i].brillo); Serial.print(' ');
-      Serial.print(leds[i].onMs); Serial.print(' ');
-      Serial.print(leds[i].offMs); Serial.print(' ');
-      Serial.println(leds[i].periodo);
+      out.print("STATE "); out.print(leds[i].id); out.print(' ');
+      out.print(nombreModo(leds[i].modo)); out.print(' ');
+      out.print(leds[i].brillo); out.print(' ');
+      out.print(leds[i].onMs); out.print(' ');
+      out.print(leds[i].offMs); out.print(' ');
+      out.println(leds[i].periodo);
     }
     if (seqDef == NULL) {
-      Serial.println("STATE SEQ OFF");
+      out.println("STATE SEQ OFF");
     } else {
-      Serial.print("STATE SEQ "); Serial.print(seqDef->nombre); Serial.print(' ');
-      Serial.print(seqVel); Serial.print(' '); Serial.println(seqPausa ? "PAUSA" : "RUN");
+      out.print("STATE SEQ "); out.print(seqDef->nombre); out.print(' ');
+      out.print(seqVel); out.print(' '); out.println(seqPausa ? "PAUSA" : "RUN");
     }
-    Serial.println("OK STATUS");
+    out.println("OK STATUS");
 
   } else {
-    Serial.println("ERR comando");
+    out.println("ERR comando");
   }
 }
 
 // ======================================================================
-// Las tres tareas de cada vuelta de loop()
+// Entrada de texto: junta caracteres hasta '\n' (igual para serie y BLE)
 // ======================================================================
-void leerSerie() {
-  while (Serial.available() > 0) {
-    char c = (char)Serial.read();
-    if (c == '\r') continue;
+void recibirCaracter(Entrada &e, char c, Print &canal) {
+  if (c == '\r') return;
+  if (c == '\n') {
+    if (e.desbordada) {
+      canal.println("ERR linea larga");
+    } else {
+      e.linea[e.largo] = '\0';
+      procesarComando(e.linea, canal);
+    }
+    e.largo = 0; e.desbordada = false;
+  } else if (e.largo < MAX_LINEA) {
+    e.linea[e.largo++] = c;
+  } else {
+    e.desbordada = true;            // se descarta hasta el salto de línea
+  }
+}
+
+// ======================================================================
+// Bluetooth LE (solo Arduino 101)
+// ======================================================================
+#ifdef CON_BLE
+// UUID del «Nordic UART Service»: muchas apps de prueba (nRF Connect, Serial Bluetooth Terminal)
+// lo reconocen como un puerto serie, así se puede probar la placa sin la app de DuinoVisor.
+#define NOMBRE_BLE    "DuinoVisor"
+#define UUID_SERVICIO "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
+#define UUID_RX       "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"   // el celular escribe órdenes
+#define UUID_TX       "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"   // la placa notifica respuestas
+#define BLE_TROZO     20       // bytes por paquete BLE
+#define BLE_PAUSA_MS  15       // entre notificaciones, para no llenar la pila BLE
+
+BLEService        bleServicio(UUID_SERVICIO);
+BLECharacteristic bleRx(UUID_RX, BLEWrite | BLEWriteWithoutResponse, BLE_TROZO);
+BLECharacteristic bleTx(UUID_TX, BLENotify, BLE_TROZO);
+
+// Cola circular de bytes; N debe ser potencia de 2. Un solo productor y un solo consumidor.
+template <uint16_t N>
+struct Cola {
+  static_assert((N & (N - 1)) == 0, "N debe ser potencia de 2");
+  uint8_t datos[N];
+  volatile uint16_t ini = 0, fin = 0;      // ini: próximo a sacar; fin: próximo hueco
+  uint16_t usados() const { return (uint16_t)(fin - ini); }
+  uint16_t libres() const { return N - usados(); }
+  bool meter(uint8_t c) {
+    if (libres() == 0) return false;
+    datos[fin & (N - 1)] = c;
+    fin = fin + 1;
+    return true;
+  }
+  uint8_t mirar(uint16_t i) const { return datos[(ini + i) & (N - 1)]; }
+  void descartar(uint16_t n) { ini = ini + n; }
+  void vaciar() { ini = fin; }
+};
+
+Cola<128> bleEntrada;     // lo que escribe el celular (lo llena bleAlEscribir)
+Cola<256> bleSalida;      // respuestas pendientes de notificar (la vacía bleAtender)
+Entrada   entradaBle = { {0}, 0, false };
+bool      bleConectado = false;
+uint32_t  bleUltimoEnvio = 0;
+
+// OJO: BLE.connected() no sirve aquí; BLE es la propia placa y siempre da false. Lo que cuenta es si el
+// celular (el «central») sigue conectado; bleAtender lo consulta una vez por vuelta y lo guarda en bleConectado.
+bool bleActivo() { return bleConectado && bleTx.subscribed(); }
+
+// Lo que se imprime aquí va al celular. Junta cada línea y la pasa entera a la cola; si no cabe,
+// la descarta entera, así nunca llega media línea.
+class SalidaBle : public Print {
+ public:
+  using Print::write;
+  size_t write(uint8_t c) override {
+    if (c == '\r') return 1;
+    if (largo < sizeof(linea)) linea[largo++] = c; else desbordada = true;
     if (c == '\n') {
-      if (desbordada) {
-        Serial.println("ERR linea larga");
-      } else {
-        linea[largo] = '\0';
-        procesarComando(linea);
+      if (!desbordada && bleActivo() && bleSalida.libres() >= largo) {
+        for (uint8_t i = 0; i < largo; i++) bleSalida.meter(linea[i]);
       }
       largo = 0; desbordada = false;
-    } else if (largo < MAX_LINEA) {
-      linea[largo++] = c;
-    } else {
-      desbordada = true;            // se descarta hasta el salto de línea
     }
+    return 1;
   }
+ private:
+  uint8_t linea[MAX_LINEA + 1];
+  uint8_t largo = 0;
+  bool    desbordada = false;
+};
+SalidaBle salidaBle;
+
+// La pila BLE llama aquí con cada trozo que escribe el celular. Solo copia: se procesa en loop().
+void bleAlEscribir(BLEDevice, BLECharacteristic caracteristica) {
+  const uint8_t *v = caracteristica.value();
+  int n = caracteristica.valueLength();
+  for (int i = 0; i < n; i++) if (!bleEntrada.meter(v[i])) break;
+}
+
+void bleIniciar() {
+  BLE.begin();
+  BLE.setLocalName(NOMBRE_BLE);
+  BLE.setAdvertisedService(bleServicio);
+  bleServicio.addCharacteristic(bleRx);
+  bleServicio.addCharacteristic(bleTx);
+  BLE.addService(bleServicio);
+  bleRx.setEventHandler(BLEWritten, bleAlEscribir);
+  BLE.advertise();
+}
+
+void bleAtender(uint32_t ahora) {
+  BLE.poll();
+  bool conectado = BLE.central().connected();
+  if (conectado != bleConectado) {
+    // Cada conexión empieza limpia: sin órdenes a medias ni respuestas para el celular anterior.
+    bleConectado = conectado;
+    bleEntrada.vaciar(); bleSalida.vaciar();
+    entradaBle.largo = 0; entradaBle.desbordada = false;
+    if (!conectado) BLE.advertise();                     // volver a estar visible para reconectar
+  }
+  while (bleEntrada.usados() > 0) {
+    char c = (char)bleEntrada.mirar(0);
+    bleEntrada.descartar(1);
+    recibirCaracter(entradaBle, c, salidaBle);
+  }
+  if (bleSalida.usados() == 0 || ahora - bleUltimoEnvio < BLE_PAUSA_MS) return;
+  if (!bleActivo()) { bleSalida.vaciar(); return; }
+  uint8_t trozo[BLE_TROZO];
+  uint16_t n = bleSalida.usados() < BLE_TROZO ? bleSalida.usados() : BLE_TROZO;
+  for (uint16_t i = 0; i < n; i++) trozo[i] = bleSalida.mirar(i);
+  if (bleTx.writeValue(trozo, n)) bleSalida.descartar(n);   // si falla, se reintenta en la próxima pausa
+  bleUltimoEnvio = ahora;
+}
+#else
+void bleIniciar() {}
+void bleAtender(uint32_t) {}
+#endif
+
+// ======================================================================
+// Las tareas de cada vuelta de loop()
+// ======================================================================
+void leerSerie() {
+  while (Serial.available() > 0) recibirCaracter(entradaSerie, (char)Serial.read(), Serial);
 }
 
 void actualizarLeds(uint32_t ahora) {
@@ -396,6 +531,12 @@ void actualizarLeds(uint32_t ahora) {
   }
 }
 
+void informarLectura(Print &out, bool ok, float t, float h) {
+  if (!ok) { out.println("DATA ERR"); return; }
+  out.print("DATA T="); out.print(t, 1);
+  out.print(" H=");     out.println(h, 1);
+}
+
 void leerSensor(uint32_t ahora) {
   if (ahora - ultimoDht < periodoDht) return;
   ultimoDht = ahora;
@@ -403,13 +544,12 @@ void leerSensor(uint32_t ahora) {
   // interrupciones unos ms mientras lee los bits.
   float h = dht.readHumidity();
   float t = dht.readTemperature();
-  if (isnan(h) || isnan(t)) {
-    Serial.println("DATA ERR");
-    return;                                  // en TERMO se conserva la última zona
-  }
-  Serial.print("DATA T="); Serial.print(t, 1);
-  Serial.print(" H=");     Serial.println(h, 1);
-  if (termoActivo) evaluarTermo(t, ahora);
+  bool ok = !(isnan(h) || isnan(t));
+  informarLectura(Serial, ok, t, h);                         // la lectura va por todos los canales
+#ifdef CON_BLE
+  informarLectura(salidaBle, ok, t, h);
+#endif
+  if (ok && termoActivo) evaluarTermo(t, ahora);            // si falla, TERMO conserva la última zona
 }
 
 void setup() {
@@ -420,11 +560,13 @@ void setup() {
     analogWrite(leds[i].pin, 0);
     leds[i].pwm = 0;
   }
+  bleIniciar();
 }
 
 void loop() {
   uint32_t ahora = millis();
   leerSerie();
+  bleAtender(ahora);
   actualizarSecuencia(ahora);
   actualizarLeds(ahora);
   leerSensor(ahora);
