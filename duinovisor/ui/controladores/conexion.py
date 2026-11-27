@@ -91,6 +91,7 @@ class ConexionMixin:
 
     def _al_conectar(self, puerto: str):
         self._reiniciar_espejo()
+        self._marcar_base()                     # lo que hay en pantalla al conectar no cuenta como cambio
         if puerto == "SIMULADOR":
             self._poner_estado("Modo demostración: Arduino simulado", "ok")
         else:
@@ -106,7 +107,7 @@ class ConexionMixin:
         self.sim = None
         self._reiniciar_espejo()
         self._poner_estado(motivo or "Sin conexión", "error" if motivo else "off")
-        self.v_pendiente.set("")
+        self._envio_total, self._listo, self._fallo = 0, False, None
         self.al_cambiar()
 
     def _detener_arduino(self):

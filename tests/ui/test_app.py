@@ -307,7 +307,7 @@ def test_cambiar_de_vista_no_pierde_la_configuracion(gui):
     assert app.vista_actual == "clima"
     app.mostrar_vista("semaforo")
     assert app.paneles["R"].v_modo.get() == "ON"
-    assert set(app.vistas) == {"semaforo", "clima"}
+    assert set(app.vistas) == {"semaforo", "clima", "config"}
 
 
 # ------------------------------------------------------------------ interfaz nueva (luces, ritmos, tema)
@@ -357,9 +357,147 @@ def test_cambiar_tema_conserva_todo(gui):
     gui.v_tema.set("oscuro")
     gui.v_acento.set("violeta")
     assert T.tema_actual == "oscuro" and T.ACENTO == T.ACENTOS["violeta"][2]
-    assert preferencias.cargar() == {"tema": "oscuro", "acento": "violeta"}
+    assert preferencias.cargar() == {**preferencias.POR_DEFECTO, "tema": "oscuro", "acento": "violeta"}
     assert gui.aplicado is aplicado and gui.paneles["G"].v_modo.get() == "ON"
     assert list(gui.grafica.temperaturas)[-1] == 24.0                    # la gráfica nueva tiene el historial
     assert ("línea de prueba", "info") in gui._lineas_log
     gui.alternar_tema()
     assert T.tema_actual == "claro"
+
+
+# ------------------------------------------------------------------ configuración y acerca de
+def test_configuracion_es_una_pestana_y_sobrevive_al_cambio_de_tema(gui):
+    gui.v_vista.set("config")
+    assert gui.vista_actual == "config"
+    gui.v_tema.set("oscuro")                                             # reconstruye la ventana
+    assert gui.vista_actual == "config"
+
+
+def test_periodo_del_sensor_con_selector_y_valor_exacto(gui):
+    assert gui.v_dht.get() == "2000" and gui.v_dht_preset.get() == "2000"
+    gui.v_dht_preset.set("5000")                                         # elegir «5 s»
+    assert gui.v_dht.get() == "5000"
+    gui.v_dht.set("1234")                                                # a medida desde los detalles
+    assert gui.v_dht_preset.get() == ""
+    gui.v_dht.set("60000")
+    assert gui.v_dht_preset.get() == "60000"
+    enviar_y_esperar(gui, gui.aplicar)
+    assert gui.sim.periodo_dht == 60000
+
+
+def test_conexion_automatica_se_recuerda(gui, monkeypatch):
+    from duinovisor.almacenamiento import preferencias
+    gui.v_auto.set(False)
+    assert preferencias.cargar()["auto_conectar"] is False
+    from duinovisor.ui import app as g
+    buscadas = []
+    monkeypatch.setattr(g.App, "buscar_placa", lambda self: buscadas.append(1))
+    otra = g.App(demo=False)                                             # sin demo y sin conexión automática
+    try:
+        assert not buscadas and not otra.enlace.conectado
+        assert "Configuración" in otra.v_estado.get()
+    finally:
+        otra.enlace.cerrar()
+
+
+def test_acerca_de_se_abre_una_sola_vez(gui):
+    gui.abrir_acerca()
+    ventana = gui._ventana_acerca
+    assert ventana is not None
+    gui.abrir_acerca()
+    assert gui._ventana_acerca is ventana
+    gui._cerrar_acerca()
+    assert gui._ventana_acerca is None
+
+
+def test_vista_de_clima_con_termometro_y_gota_se_recuerda(gui):
+    from duinovisor.almacenamiento import preferencias
+    assert gui.v_vista_clima.get() == "medidor"
+    gui.v_vista_clima.set("termometro")
+    assert preferencias.cargar()["vista_clima"] == "termometro"
+    gui._ultima = (24.5, 61.0)
+    gui._pintar_clima()
+    assert gui.termometro._t == 24.5 and gui.gota._h == 61.0
+    gui.v_tema.set("oscuro")                                             # tras reconstruir sigue igual
+    assert gui.v_vista_clima.get() == "termometro"
+
+
+# ------------------------------------------------------------------ protoboard: fichas
+def test_ficha_del_led_elegido_y_del_sensor(gui):
+    from duinovisor.dominio.placa import DHT, LEDS
+    led = LEDS[-1]
+    gui.v_sel.set(led.id)
+    gui.paneles[led.id].v_modo.set("ON")
+    enviar_y_esperar(gui, gui.aplicar)
+    filas = dict(gui._ficha_actual().filas)
+    assert f"Pin {led.pin}" in filas["Conectado a"] and filas["Ahora"] == "Encendida al 100 %"
+    gui.protoboard._clic((f"sel_{DHT.id}",))                            # clic en el sensor
+    assert gui.protoboard.componente == DHT.id
+    ficha = gui._ficha_actual()
+    assert DHT.nombre in ficha.titulo and f"pin {DHT.pin}" in dict(ficha.filas)["Conectado a"]
+    gui.protoboard._clic((f"sel_{LEDS[0].id}",))                        # clic en un LED: vuelve a su ficha
+    assert gui.protoboard.componente is None and gui.v_sel.get() == LEDS[0].id
+    gui.v_seq.set("VIAL")
+    enviar_y_esperar(gui, gui.alternar_secuencia)
+    assert "animación" in dict(gui._ficha_actual().filas)["Qué hace"]
+
+
+# ------------------------------------------------------------------ barra de cambios sin aplicar
+def test_barra_de_cambios_pendiente_deshacer_y_cerrar(gui):
+    barra, led = gui.barra_cambios, gui.paneles[COLORES[0]]
+    assert barra.estado is None                                         # recién conectado: nada que avisar
+    led.v_modo.set("ON")
+    assert barra.estado == "pendiente" and barra.boton[0] == "Aplicar cambios"
+    led.v_modo.set("OFF")                                               # deshacer el cambio quita el aviso
+    assert barra.estado is None
+    led.v_modo.set("ON")
+    gui._cerrar_barra()                                                 # la ×: se oculta hasta el próximo cambio
+    gui.al_cambiar()
+    assert barra.estado is None
+    led.v_brillo.set(100)
+    assert barra.estado == "pendiente"
+
+
+def test_barra_de_cambios_envio_aplicado_y_error(gui):
+    barra, led = gui.barra_cambios, gui.paneles[COLORES[0]]
+    led.v_modo.set("ON")
+    barra.boton[1]()                                                    # botón «Aplicar cambios» de la barra
+    assert barra.estado == "enviando" and barra.progreso is not None
+    assert esperar(gui, lambda: terminado(gui))
+    assert barra.estado == "listo"
+    gui._quitar_listo()
+    assert barra.estado is None                                         # la ventana es la nueva base
+    gui.v_dht.set("50")                                                 # fuera de rango
+    assert barra.estado == "error"
+    gui.v_dht.set("2000")
+    assert barra.estado is None
+
+
+def test_barra_de_cambios_cuando_el_arduino_rechaza(gui):
+    gui.paneles[COLORES[0]].v_modo.set("ON")
+    gui.sim.procesar = lambda t: ["ERR no quiero"]
+    gui.aplicar()
+    assert esperar(gui, lambda: terminado(gui))
+    assert gui.barra_cambios.estado == "fallo" and "no quiero" in gui.barra_cambios.detalle
+    assert gui.barra_cambios.boton[0] == "Reintentar"
+    gui.desconectar()
+    assert gui.barra_cambios.estado is None
+
+
+def test_ficha_cerrar_reabrir_y_acciones(gui):
+    from duinovisor.dominio.placa import DHT, LEDS
+    pb = gui.protoboard
+    assert pb.ficha_abierta
+    pb._clic(("ficha", "ficha_cerrar"))                                  # la ×
+    assert not pb.ficha_abierta
+    pb._clic((f"sel_{LEDS[0].id}",))                                     # un clic en una pieza la reabre
+    assert pb.ficha_abierta and gui.v_sel.get() == LEDS[0].id
+    pb._clic(("ctl", "ctl_ficha"))                                       # botón «Ficha» de la barra
+    assert not pb.ficha_abierta
+    pb._clic(("ctl", "ctl_ficha"))
+    assert pb.ficha_abierta
+    pb._clic(("ficha", "ficha_accion"))                                  # LED: señala su editor, no cambia de pestaña
+    assert gui.vista_actual == "semaforo"
+    pb._clic((f"sel_{DHT.id}",))
+    pb._clic(("ficha", "ficha_accion"))                                  # sensor: «Ver el clima»
+    assert gui.vista_actual == "clima"

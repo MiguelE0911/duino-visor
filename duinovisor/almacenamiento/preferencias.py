@@ -1,4 +1,4 @@
-"""Preferencias de la ventana (tema y color de acento) guardadas en un .json del usuario."""
+"""Preferencias del programa (tema, acento, conexión automática, vista de Clima) en un .json del usuario."""
 from __future__ import annotations
 
 import json
@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-POR_DEFECTO = {"tema": "claro", "acento": "azul"}
+POR_DEFECTO = {"tema": "claro", "acento": "azul", "auto_conectar": True, "vista_clima": "medidor"}
 
 
 def ruta() -> Path:
@@ -20,14 +20,17 @@ def ruta() -> Path:
 
 
 def cargar() -> dict:
-    """Siempre devuelve un dict completo: si el archivo falta o está roto, valen los valores por defecto."""
+    """Siempre devuelve un dict completo: si el archivo falta o está roto, valen los valores por defecto.
+
+    Cada valor se acepta solo si es del mismo tipo que su valor por defecto.
+    """
     datos = dict(POR_DEFECTO)
     try:
         leido = json.loads(ruta().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return datos
     if isinstance(leido, dict):
-        datos.update({k: v for k, v in leido.items() if k in POR_DEFECTO and isinstance(v, str)})
+        datos.update({k: v for k, v in leido.items() if k in POR_DEFECTO and type(v) is type(POR_DEFECTO[k])})
     return datos
 
 

@@ -44,12 +44,21 @@ como una sola clase.
 | `app.py` | Crea el estado y las variables, arma la ventana, `al_cambiar`, el bucle `_ciclo` y `_recibir` |
 | `vistas/cabecera.py` | Título, estado de conexión, pestañas, «Aplicar» y menú |
 | `vistas/luces.py` | Semáforo o protoboard, editor del LED elegido y animaciones |
-| `vistas/clima.py` | Medidor, humedad, avisos, semáforo térmico, gráfica y franja de alarma |
-| `vistas/detalles.py` | Puerto, botón de conexión y registro de comunicación |
-| `vistas/ajustes.py` | Ventana de ajustes y cambio de tema (reconstruye la ventana) |
+| `vistas/clima.py` | Medidor y barras o termómetro y gota, avisos, semáforo térmico, gráfica y franja de alarma |
+| `vistas/detalles.py` | Registro de comunicación |
+| `vistas/configuracion.py` | Pestaña Configuración (conexión, sensor, apariencia, cada ajuste con su explicación), preferencias y cambio de tema (reconstruye la ventana) |
+| `vistas/acerca.py` | Ventana «Acerca de» |
 | `controladores/conexion.py` | Buscar la placa, conectar y desconectar (en hilos, vía `cola_ui`) |
 | `controladores/envio.py` | Leer la ventana, armar los pasos y enviarlos uno a uno esperando OK/ERR |
-| `controladores/espejo.py` | Lo que el Arduino está haciendo, calculado desde lo confirmado |
+| `controladores/cambios.py` | Qué muestra la barra de cambios sin aplicar (base, envío, aplicado, fallo) |
+| `controladores/espejo.py` | Lo que el Arduino está haciendo, calculado desde lo confirmado, y la ficha del componente elegido |
+| `fichas.py` | Textos de las fichas de la protoboard (sin Tkinter; se prueban solos) |
+| `widgets/protoboard.py` | El lienzo de la protoboard: zoom, arrastre, teclado, paso del ratón, barra de herramientas y animación |
+| `widgets/dibujo_placa.py` | Cómo se dibuja cada pieza (placa, protoboard, cables, resistencias, LEDs, DHT11) |
+| `widgets/ficha.py` | La tarjeta flotante de la ficha |
+| `widgets/geometria.py` | Cuentas sin Tkinter: curvas de los cables, degradados, encaje, zoom y vista previa |
+| `widgets/raster.py` | Pintar con Pillow: adaptador con la API del Canvas, mesa, LEDs con resplandor y cables resaltados |
+| `widgets/avisos.py` | El aviso flotante de cambios sin aplicar (una ventanita sin bordes que sigue a la principal) |
 | `controladores/secuencias.py` | Iniciar, pausar, seguir y detener animaciones |
 | `controladores/archivos.py` | Escenas y CSV (diálogos de archivo) |
 | `controladores/sensor.py` | Historial de lecturas y alarmas |
@@ -74,7 +83,8 @@ la decisión no necesita la ventana para nada, en `dominio/`.
 | Una animación nueva | `SECUENCIAS` y `NOMBRES_SEQ` en `dominio/secuencias.py` (pasos `(ms, {LED: brillo})`) y la misma tabla en el sketch (una columna por LED, en el orden de `leds[]`). La ventana y el simulador la muestran solos |
 | Un modo de LED nuevo | `MODOS`, `errores` y `brillo_en` en `dominio/leds.py`; `comando_led` en `dominio/protocolo.py`; el sketch; el simulador; la etiqueta en `ui/constantes.MODOS` y sus controles en `vistas/luces.py` |
 | Una orden nueva del protocolo | Función `comando_*` / `Paso` en `dominio/protocolo.py` (y `confirmar` si cambia el estado), el sketch y el simulador |
-| Un sensor nuevo | Su lectura en `dominio/protocolo.interpretar`, su `Sensor` en `SENSORES` de `dominio/placa.py`, el simulador, y una vista o tarjeta en `ui/vistas/` |
+| Un sensor nuevo | Su lectura en `dominio/protocolo.interpretar`, su `Sensor` en `SENSORES` de `dominio/placa.py` (con su `descripcion` para la ficha), el simulador, su dibujo en `widgets/protoboard.py` con la etiqueta `sel_<id>`, y una vista o tarjeta en `ui/vistas/` |
+| Un ajuste nuevo | Su fila con `_fila_ajuste` (título, explicación y control) en `vistas/configuracion.py`; si se recuerda, su clave y valor por defecto en `almacenamiento/preferencias.POR_DEFECTO` |
 | Una pestaña o panel nuevo | Un mixin en `ui/vistas/` (y otro en `ui/controladores/` si tiene lógica), añadido a la lista de bases de `App` |
 | Un widget nuevo | En el módulo de su familia dentro de `ui/widgets/` (o uno nuevo), heredando de `base.Lienzo` |
 | Un formato de archivo nuevo | Un módulo en `almacenamiento/` y su acción en `ui/controladores/archivos.py` |
@@ -82,3 +92,23 @@ la decisión no necesita la ventana para nada, en `dominio/`.
 
 Cada cambio en `dominio/` lleva su prueba en `tests/dominio/`, y si toca el contrato con la placa, también
 en `tests/firmware/`.
+
+## Dibujar con Tkinter sin que se trabe
+
+Tk repinta de una vez **el rectángulo que abarca todo lo que cambió** desde el último repintado. Si en un
+fotograma cambian un LED a la izquierda y la ficha abajo a la derecha, se repinta casi todo el lienzo, y el coste
+crece con el número de elementos (con ~2000 elementos vectoriales, ~55 ms: más que el ciclo de 50 ms).
+
+Por eso la vista protoboard tiene dos capas:
+
+- **Lo fijo es una imagen** pintada con Pillow (`widgets/raster.py`): mesa, placa, protoboard, cables y
+  resistencias. `LienzoImagen` imita la parte de la API del Canvas que usa `dibujo_placa`, así las mismas funciones
+  dibujan en la imagen o, si no hay Pillow, en el lienzo. Se pinta al doble de tamaño y se reduce (antialiasing);
+  las letras se escriben después, ya reducida. Con la imagen, repintar todo cuesta ~5 ms.
+- **Lo vivo son pocos elementos**: los LEDs (una imagen por nivel de brillo, en caché), anillos, halos, la barra de
+  herramientas y la ficha. Se cambian con `itemconfigure`, sin redibujar la escena.
+
+Reglas: no hacer `tag_raise`/`tag_lower` de capas grandes en cada fotograma; con zoom o desplazamiento, redibujar
+solo la escena (`_redibujar_escena`); y para algo que dependa de lo que hay bajo el ratón, buscarlo por geometría
+(`_componente_en`) y no por las etiquetas de los elementos, que en la imagen no existen. Para medir, pon la pantalla
+al 125 % o 150 %: es donde se nota.

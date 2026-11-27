@@ -30,14 +30,12 @@ class CabeceraMixin:
         self.b_reintentar = BotonPildora(fila, "Reintentar", self.reintentar, alto=26, estilo="texto", fuente=f,
                                          fondo=T.FONDO, tam=T.TAM_PEQ)
 
-        self.tabs = Segmentado(cab, self.v_vista, [("semaforo", "Luces"), ("clima", "Clima")], ancho=240,
-                               columnas=2, alto_fila=40, fuente=f, fondo=T.FONDO, estilo="pista")
+        self.tabs = Segmentado(cab, self.v_vista, [("semaforo", "Luces"), ("clima", "Clima"), ("config", "Configuración")],
+                               ancho=340, columnas=3, alto_fila=40, fuente=f, fondo=T.FONDO, estilo="pista")
         self.tabs.grid(row=0, column=1)
 
-        der = tk.Frame(cab, bg=T.FONDO)
+        der = tk.Frame(cab, bg=T.FONDO)          # los cambios sin aplicar se avisan en la barra del pie
         der.grid(row=0, column=2, sticky="e")
-        etiqueta(der, "", f, T.TAM_PEQ, T.ACENTO, T.FONDO, textvariable=self.v_pendiente).pack(
-            side="left", padx=(0, self._px(10)))
         self.b_detalles = BotonPildora(der, "Mostrar detalles", lambda: self.v_detalles.set(not self.v_detalles.get()),
                                        ancho=150, alto=40, estilo="fantasma", fuente=f, fondo=T.FONDO)
         self.b_detalles.pack(side="left", padx=(0, self._px(8)))
@@ -56,7 +54,8 @@ class CabeceraMixin:
         self.menu.add_separator()
         self.menu.add_command(label="Exportar lecturas (CSV)…", command=self.exportar_csv)
         self.menu.add_separator()
-        self.menu.add_command(label="Ajustes…", command=self.abrir_ajustes)
+        self.menu.add_command(label="Configuración…", command=lambda: self.v_vista.set("config"))
+        self.menu.add_command(label="Acerca de DuinoVisor…", command=self.abrir_acerca)
 
     def _abrir_menu(self):
         try:

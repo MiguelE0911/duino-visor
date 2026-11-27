@@ -42,11 +42,12 @@ class LucesMixin:
         self.semaforo = SemaforoVirtual(self.f_semaforo, ancho=138, al_elegir=self.v_sel.set)
         self.semaforo.pack(expand=True)
         self.f_semaforo.bind("<Configure>", self._ajustar_semaforo)
-        self.protoboard = Protoboard(self.area_luces, 600, 260, fuente=f, al_elegir=self.v_sel.set)
+        self.protoboard = Protoboard(self.area_luces, 600, 320, fuente=f, al_elegir=self.v_sel.set,
+                                     al_accion=self._accion_ficha)
 
         etiqueta(c, "", f, T.TAM_CUERPO, T.TEXTO, textvariable=self.v_sem, negrita=True).grid(
             row=1, column=0, pady=(self._px(8), 0))
-        etiqueta(c, "Haz clic en una luz para elegir qué hace.", f, T.TAM_PEQ, T.TEXTO_3).grid(row=2, column=0)
+        etiqueta(c, "", f, T.TAM_PEQ, T.TEXTO_3, textvariable=self.v_ayuda_luces).grid(row=2, column=0)
         fila_chips = tk.Frame(c, bg=T.SUPERFICIE)
         fila_chips.grid(row=3, column=0, pady=(self._px(12), 0))
         self.chips = {}
@@ -185,6 +186,13 @@ class LucesMixin:
         (self.f_ms_blink.grid if modo == "BLINK" else self.f_ms_blink.grid_remove)()
         (self.f_ms_fade.grid if modo == "FADE" else self.f_ms_fade.grid_remove)()
 
+    def _accion_ficha(self, componente):
+        """Botón de la ficha: un sensor lleva a Clima; un LED señala su editor de la derecha."""
+        if componente is not None:
+            self.v_vista.set("clima")
+        else:
+            self.t_editor.resaltar()
+
     def _desbloquear(self):
         if self.aplicado.seq is not None:
             self.detener_secuencia()
@@ -199,6 +207,7 @@ class LucesMixin:
         self._construir_editor()
         self.semaforo.seleccionar(col)
         self.protoboard.seleccionar(col)
+        self.protoboard.ver_componente(None)                 # la ficha pasa a ser la del LED elegido
         for c, ch in self.chips.items():
             ch.configurar(seleccionado=(c == col))
 
@@ -208,9 +217,12 @@ class LucesMixin:
         if self.v_modo_luces.get() == "protoboard":
             self.f_semaforo.grid_remove()
             self.protoboard.grid(row=0, column=0, sticky="nsew")
+            self.v_ayuda_luces.set("Clic en una pieza: su ficha (Esc la cierra) · Rueda o + / −: acercar · "
+                                   "Arrastra o flechas: moverte · 0 o doble clic: ver todo")
         else:
             self.protoboard.grid_remove()
             self.f_semaforo.grid(row=0, column=0, sticky="nsew")
+            self.v_ayuda_luces.set("Haz clic en una luz para elegir qué hace.")
 
     def _actualizar_luces(self, bloqueado: bool):
         if not self._construido:

@@ -1,8 +1,8 @@
 """Ventana de DuinoVisor (Tkinter): une vistas y controladores.
 
-Dos vistas: «Luces» (el semáforo, o la protoboard, en el centro; al hacer clic en una luz se edita en el
-panel de la derecha) y «Clima» (temperatura, humedad, gráfica, avisos y semáforo térmico). Lo técnico
-(puerto, registro, milisegundos, PWM) queda detrás de «Mostrar detalles».
+Tres pestañas: «Luces» (el semáforo, o la protoboard, en el centro; al hacer clic en una luz se edita en el
+panel de la derecha), «Clima» (temperatura, humedad, gráfica, avisos y semáforo térmico) y «Configuración»
+(conexión, sensor y apariencia). Lo técnico (registro, milisegundos, PWM) queda detrás de «Mostrar detalles».
 
 El semáforo, la protoboard y los chips espejan lo que hace el Arduino: se calculan con el mismo modelo que el
 sketch, a partir de lo que la placa confirmó con OK.
@@ -30,24 +30,28 @@ from duinovisor.dominio.secuencias import SecuenciaLocal
 from duinovisor.hardware.enlace import Enlace
 from duinovisor.hardware.simulador import ArduinoSimulado
 from duinovisor.ui import tema as T
-from duinovisor.ui.constantes import NOMBRE_LUZ, ORDEN_SEMAFORO, POLL_MS
+from duinovisor.ui.constantes import NOMBRE_LUZ, ORDEN_SEMAFORO, POLL_MS, VISTAS_CLIMA
 from duinovisor.ui.controladores.archivos import ArchivosMixin
+from duinovisor.ui.controladores.cambios import CambiosMixin
 from duinovisor.ui.controladores.conexion import ConexionMixin
 from duinovisor.ui.controladores.envio import EnvioMixin
 from duinovisor.ui.controladores.espejo import EspejoMixin, apagados
 from duinovisor.ui.controladores.secuencias import SecuenciasMixin
 from duinovisor.ui.controladores.sensor import SensorMixin
 from duinovisor.ui.estado_led import LedUI
-from duinovisor.ui.vistas.ajustes import AjustesMixin
+from duinovisor.ui.vistas.acerca import AcercaMixin
 from duinovisor.ui.vistas.cabecera import CabeceraMixin
 from duinovisor.ui.vistas.clima import ClimaMixin
+from duinovisor.ui.vistas.configuracion import ConfiguracionMixin
 from duinovisor.ui.vistas.detalles import DetallesMixin
 from duinovisor.ui.vistas.luces import LucesMixin
+from duinovisor.ui.widgets.avisos import BarraCambios
 from duinovisor.ui.widgets.grafica import MAX_LECTURAS
 
 
-class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
-          ConexionMixin, EnvioMixin, EspejoMixin, SecuenciasMixin, ArchivosMixin, SensorMixin, tk.Tk):
+class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMixin, AcercaMixin,
+          ConexionMixin, EnvioMixin, EspejoMixin, SecuenciasMixin, ArchivosMixin, SensorMixin, CambiosMixin,
+          tk.Tk):
     def __init__(self, demo: bool = False):
         super().__init__()
         T.ESCALA = self._escala()
@@ -83,20 +87,30 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
         self._ultima = None                          # (temperatura, humedad) o None
         self._estado_tipo = "off"
         self._construido = False
-        self._ventana_ajustes = None
+        self._ventana_acerca = None
         self._bloqueo_editor = None
+        self._iniciar_cambios()
 
         self._crear_variables()
         self._estilo()
         self._construir()
         self.protocol("WM_DELETE_WINDOW", self._cerrar)
         self.bind_all("<Control-Return>", lambda e: self.aplicar())
+        # el aviso flotante del pie acompaña a la ventana
+        self.bind("<Configure>", lambda e: e.widget is self and self._construido and self.barra_cambios.recolocar(),
+                  add="+")
+        self.bind("<Unmap>", lambda e: e.widget is self and self._construido and self.barra_cambios.al_minimizar(True),
+                  add="+")
+        self.bind("<Map>", lambda e: e.widget is self and self._construido and self.barra_cambios.al_minimizar(False),
+                  add="+")
         self.al_cambiar()
         self.after(POLL_MS, self._ciclo)
         if demo:
             self.conectar_demo()
-        else:
+        elif self.prefs["auto_conectar"]:
             self.buscar_placa()
+        else:
+            self._poner_estado("Sin conexión · elige el puerto en Configuración", "off")
 
     def ahora_ms(self) -> float:
         return (time.monotonic() - self._t0) * 1000
@@ -112,13 +126,13 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
     def _crear_variables(self):
         self.paneles = {c: LedUI(c, self.al_cambiar) for c in COLORES}
         self.v_sel = tk.StringVar(value=ORDEN_SEMAFORO[0])        # LED que se edita
-        self.v_vista = tk.StringVar(value="semaforo")              # pestaña: semaforo (Luces) o clima
+        self.v_vista = tk.StringVar(value="semaforo")              # pestaña: semaforo (Luces), clima o config
         self.v_modo_luces = tk.StringVar(value="semaforo")         # semaforo o protoboard
+        self.v_ayuda_luces = tk.StringVar(value="Haz clic en una luz para elegir qué hace.")
         self.v_detalles = tk.BooleanVar(value=False)
         self.v_tema = tk.StringVar(value=T.tema_actual)
         self.v_acento = tk.StringVar(value=T.acento_actual)
         self.v_estado = tk.StringVar(value="Sin conexión")
-        self.v_pendiente = tk.StringVar(value="")
         self.v_puerto = tk.StringVar()
         self.v_sem = tk.StringVar(value="Sin conexión")
         self.v_titulo_editor = tk.StringVar(value=NOMBRE_LUZ[ORDEN_SEMAFORO[0]])
@@ -136,11 +150,15 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
         self.v_tmin, self.v_tmax = tk.StringVar(value="22"), tk.StringVar(value="28")
         self.v_alarmas = tk.BooleanVar(value=False)
         self.v_amax_t, self.v_amax_h = tk.StringVar(value="35"), tk.StringVar(value="80")
+        vista_clima = self.prefs["vista_clima"]
+        self.v_vista_clima = tk.StringVar(value=vista_clima if vista_clima in dict(VISTAS_CLIMA) else "medidor")
+        self._crear_variables_config()
 
         self.v_sel.trace_add("write", lambda *_: self._al_elegir_led())
         self.v_vista.trace_add("write", lambda *_: self.mostrar_vista(self.v_vista.get()))
         self.v_modo_luces.trace_add("write", lambda *_: self._mostrar_modo_luces())
         self.v_detalles.trace_add("write", lambda *_: self._mostrar_detalles())
+        self.v_vista_clima.trace_add("write", lambda *_: self._cambio_vista_clima())
         for v in (self.v_tema, self.v_acento):
             v.trace_add("write", lambda *_: self._cambio_apariencia())
         for v in (self.v_seq, self.v_vel):
@@ -194,11 +212,14 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
         self.vistas = {}
         self._construir_luces(cuerpo)
         self._construir_clima(cuerpo)
+        self._construir_config(cuerpo)
         self._construir_detalles()
+        self.barra_cambios = BarraCambios(self, self.f, al_cerrar=self._cerrar_barra)   # flota: no ocupa fila
 
         self._construido = True
         self.mostrar_vista(self.v_vista.get())
         self._mostrar_modo_luces()
+        self._mostrar_vista_clima()
         self._mostrar_detalles()
         self._al_elegir_led()
         self._repintar_log()
@@ -206,10 +227,11 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
         self._actualizar_banner()
         self._poner_estado(self.v_estado.get(), self._estado_tipo)
         self.actualizar_puertos(silencioso=True)
+        self._actualizar_barra()
         self._texto_sem = None
 
     def mostrar_vista(self, nombre: str):
-        """Cambia entre Luces (semaforo) y Clima. No toca nada de lo aplicado en el Arduino."""
+        """Cambia entre Luces (semaforo), Clima y Configuración. No toca nada de lo aplicado en el Arduino."""
         if self.v_vista.get() != nombre:
             self.v_vista.set(nombre)
             return
@@ -228,18 +250,14 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
         self._actualizar_botones_seq()
         self._actualizar_luces(bloqueado)
         pendiente = False
-        if not self.enlace.conectado:
-            self.v_pendiente.set("")
-        else:
+        if self.enlace.conectado:
             try:
-                pasos = plan(*self.leer_ui(), self.aplicado)
-                pendiente = bool(pasos)
-                self.v_pendiente.set("Tienes cambios sin aplicar" if pasos else "")
+                pendiente = bool(plan(*self.leer_ui(), self.aplicado))
             except ValueError:
                 pendiente = True
-                self.v_pendiente.set("Revisa los valores: hay alguno incorrecto")
         if hasattr(self, "b_aplicar"):
             self.b_aplicar.configurar(estilo="relleno" if pendiente or not self.enlace.conectado else "suave")
+        self._actualizar_barra()
 
     # ------------------------------------------------------------------ bucle y recepción
     def _ciclo(self):
@@ -264,6 +282,9 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
             self.protoboard.poner(brillos)
             for c, ch in self.chips.items():
                 ch.configurar(brillo=int(brillos[c]))
+            if self.vista_actual == "semaforo" and self.v_modo_luces.get() == "protoboard":
+                self.protoboard.poner_ficha(self._ficha_actual(brillos))
+                self.protoboard.animar(self.ahora_ms())
             texto = self._texto_semaforo()
             if texto != self._texto_sem:
                 self._texto_sem = texto
@@ -280,6 +301,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
             self._pintar_clima()
             self._registrar(m.temperatura, m.humedad)
             self._espejo_termo(m.temperatura)
+            self.protoboard.pulso_dato(self.ahora_ms())
             self._revisar_alarmas(m.temperatura, m.humedad)
         elif m.tipo == "DATA_ERR":
             self.v_temp.set("-- °C")

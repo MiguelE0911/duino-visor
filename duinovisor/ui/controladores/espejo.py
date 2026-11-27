@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from duinovisor.dominio.leds import COLORES, LedConfig, brillo_en
+from duinovisor.dominio.placa import led, sensor
 from duinovisor.dominio.protocolo import Aplicado, Paso, confirmar
 from duinovisor.dominio.secuencias import NOMBRES_SEQ
 from duinovisor.dominio.termometro import leds_de_zona, zona_termo
 from duinovisor.ui.constantes import ZONAS
+from duinovisor.ui.fichas import Ficha, ficha_led, ficha_sensor
 
 
 def apagados() -> dict:
@@ -62,6 +64,27 @@ class EspejoMixin:
         if self.aplicado.termo is not None:
             return "Termómetro: " + (ZONAS[self.zona] if self.zona >= 0 else "esperando una lectura")
         return "Control manual"
+
+    def _ficha_actual(self, brillos=None) -> Ficha:
+        """Ficha del componente elegido en la protoboard: un sensor si se hizo clic en él, si no el LED elegido."""
+        conectado = self.enlace.conectado
+        if self.protoboard.componente is not None:
+            periodo = self.aplicado.dht_ms
+            if periodo is None:
+                try:
+                    periodo = int(self.v_dht.get().strip())
+                except ValueError:
+                    periodo = None
+            ultima = self.lecturas[-1][1:] if self.lecturas else None
+            return ficha_sensor(sensor(self.protoboard.componente), periodo, ultima, conectado)
+        c = self.v_sel.get()
+        brillos = brillos if brillos is not None else self._brillos_espejo()
+        automatico = None
+        if self.aplicado.seq is not None:
+            automatico = f"Lo controla la animación «{NOMBRES_SEQ[self.aplicado.seq[0]]}»"
+        elif self.aplicado.termo is not None:
+            automatico = "La enciende el semáforo según la temperatura (pestaña Clima)"
+        return ficha_led(led(c), self.vista[c][0], int(brillos[c]), automatico, conectado)
 
     def _espejo_termo(self, t: float):
         if self.aplicado.termo is None:
