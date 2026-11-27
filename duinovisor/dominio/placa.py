@@ -31,6 +31,7 @@ class Sensor:
     pin: int             # pin de datos
     descripcion: str = ""   # qué es, en lenguaje llano (para su ficha en la protoboard)
     alimentacion: str = "5V"
+    color: str = "#1c7ed6"  # para dibujarlo y en su ficha
 
 
 # En el mismo orden que `leds[]` del sketch (es el orden de STATUS y de las columnas de sus secuencias).

@@ -55,6 +55,19 @@ class Tarjeta(tk.Canvas):
     def _al_cambiar_cuerpo(self, e):
         self.configure(height=e.height + 2 * self._pad)
 
+    def resaltar(self, veces: int = 3) -> None:
+        """Hace parpadear el borde en el color de acento para señalar la tarjeta."""
+        def paso(k):
+            try:
+                encendido = k % 2 == 0
+                self.itemconfigure("fondo", outline=T.ACENTO if encendido else T.BORDE,
+                                   width=round(2.5 * self.S) if encendido else 1)
+                if k < 2 * veces - 1:
+                    self.after(260, paso, k + 1)
+            except tk.TclError:
+                pass
+        paso(0)
+
 
 class Desplazable(tk.Frame):
     """Columna con desplazamiento vertical: la barra solo aparece si el contenido no cabe.

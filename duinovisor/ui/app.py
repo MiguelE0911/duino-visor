@@ -278,7 +278,8 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMix
             for c, ch in self.chips.items():
                 ch.configurar(brillo=int(brillos[c]))
             if self.vista_actual == "semaforo" and self.v_modo_luces.get() == "protoboard":
-                self.ficha_proto.poner(self._ficha_actual(brillos))
+                self.protoboard.poner_ficha(self._ficha_actual(brillos))
+                self.protoboard.animar(self.ahora_ms())
             texto = self._texto_semaforo()
             if texto != self._texto_sem:
                 self._texto_sem = texto
@@ -295,6 +296,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMix
             self._pintar_clima()
             self._registrar(m.temperatura, m.humedad)
             self._espejo_termo(m.temperatura)
+            self.protoboard.pulso_dato(self.ahora_ms())
             self._revisar_alarmas(m.temperatura, m.humedad)
         elif m.tipo == "DATA_ERR":
             self.v_temp.set("-- °C")

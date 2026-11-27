@@ -12,7 +12,7 @@ from duinovisor.ui.widgets.botones import BotonPildora, Segmentado
 from duinovisor.ui.widgets.contenedores import Aviso, Desplazable, Tarjeta
 from duinovisor.ui.widgets.controles import Deslizador
 from duinovisor.ui.widgets.luces import Chip, SemaforoVirtual
-from duinovisor.ui.widgets.protoboard import FichaComponente, Protoboard
+from duinovisor.ui.widgets.protoboard import Protoboard
 
 
 class LucesMixin:
@@ -42,8 +42,8 @@ class LucesMixin:
         self.semaforo = SemaforoVirtual(self.f_semaforo, ancho=138, al_elegir=self.v_sel.set)
         self.semaforo.pack(expand=True)
         self.f_semaforo.bind("<Configure>", self._ajustar_semaforo)
-        self.protoboard = Protoboard(self.area_luces, 600, 260, fuente=f, al_elegir=self.v_sel.set)
-        self.ficha_proto = FichaComponente(self.area_luces, f)
+        self.protoboard = Protoboard(self.area_luces, 600, 320, fuente=f, al_elegir=self.v_sel.set,
+                                     al_accion=self._accion_ficha)
 
         etiqueta(c, "", f, T.TAM_CUERPO, T.TEXTO, textvariable=self.v_sem, negrita=True).grid(
             row=1, column=0, pady=(self._px(8), 0))
@@ -186,6 +186,13 @@ class LucesMixin:
         (self.f_ms_blink.grid if modo == "BLINK" else self.f_ms_blink.grid_remove)()
         (self.f_ms_fade.grid if modo == "FADE" else self.f_ms_fade.grid_remove)()
 
+    def _accion_ficha(self, componente):
+        """Botón de la ficha: un sensor lleva a Clima; un LED señala su editor de la derecha."""
+        if componente is not None:
+            self.v_vista.set("clima")
+        else:
+            self.t_editor.resaltar()
+
     def _desbloquear(self):
         if self.aplicado.seq is not None:
             self.detener_secuencia()
@@ -210,12 +217,10 @@ class LucesMixin:
         if self.v_modo_luces.get() == "protoboard":
             self.f_semaforo.grid_remove()
             self.protoboard.grid(row=0, column=0, sticky="nsew")
-            self.ficha_proto.grid(row=1, column=0, sticky="ew", pady=(self._px(10), 0))
-            self.v_ayuda_luces.set("Clic en una luz o en el sensor para ver su ficha · Rueda del ratón: acercar · "
-                                   "Arrastra: moverte · Doble clic: ver todo")
+            self.v_ayuda_luces.set("Clic en una pieza: su ficha (Esc la cierra) · Rueda o + / −: acercar · "
+                                   "Arrastra o flechas: moverte · 0 o doble clic: ver todo")
         else:
             self.protoboard.grid_remove()
-            self.ficha_proto.grid_remove()
             self.f_semaforo.grid(row=0, column=0, sticky="nsew")
             self.v_ayuda_luces.set("Haz clic en una luz para elegir qué hace.")
 

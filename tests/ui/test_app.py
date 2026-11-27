@@ -482,3 +482,22 @@ def test_barra_de_cambios_cuando_el_arduino_rechaza(gui):
     assert gui.barra_cambios.boton[0] == "Reintentar"
     gui.desconectar()
     assert gui.barra_cambios.estado is None
+
+
+def test_ficha_cerrar_reabrir_y_acciones(gui):
+    from duinovisor.dominio.placa import DHT, LEDS
+    pb = gui.protoboard
+    assert pb.ficha_abierta
+    pb._clic(("ficha", "ficha_cerrar"))                                  # la ×
+    assert not pb.ficha_abierta
+    pb._clic((f"sel_{LEDS[0].id}",))                                     # un clic en una pieza la reabre
+    assert pb.ficha_abierta and gui.v_sel.get() == LEDS[0].id
+    pb._clic(("ctl", "ctl_ficha"))                                       # botón «Ficha» de la barra
+    assert not pb.ficha_abierta
+    pb._clic(("ctl", "ctl_ficha"))
+    assert pb.ficha_abierta
+    pb._clic(("ficha", "ficha_accion"))                                  # LED: señala su editor, no cambia de pestaña
+    assert gui.vista_actual == "semaforo"
+    pb._clic((f"sel_{DHT.id}",))
+    pb._clic(("ficha", "ficha_accion"))                                  # sensor: «Ver el clima»
+    assert gui.vista_actual == "clima"

@@ -22,6 +22,12 @@ class Ficha:
     titulo: str
     que_es: str
     filas: tuple[tuple[str, str], ...]       # (etiqueta, valor), siempre las de FILAS
+    tipo: str = "led"                        # "led" o "sensor": qué icono lleva
+    subtitulo: str = ""                      # «LED · pin 3 (PWM)»
+    color: str = "#888888"                   # el del componente real (franja e icono)
+    nivel: Optional[float] = None            # 0-1 para la barrita de «Ahora» (brillo o humedad)
+    activo: bool = False                     # punto de estado encendido en «Ahora»
+    accion: str = ""                         # texto del botón de la ficha
 
 
 def segundos(ms: int) -> str:
@@ -31,8 +37,9 @@ def segundos(ms: int) -> str:
     return f"{ms / 1000:g}".replace(".", ",") + " s"
 
 
-def porcentaje(brillo: int) -> str:
-    return f"{round(brillo * 100 / BRILLO_MAX)} %"
+def porcentaje(brillo: int, paso: int = 1) -> str:
+    """Brillo PWM en %, redondeado a múltiplos de `paso`."""
+    return f"{round(brillo * 100 / BRILLO_MAX / paso) * paso} %"
 
 
 def comportamiento_led(cfg: Optional[LedConfig]) -> str:
@@ -55,9 +62,13 @@ def ficha_led(led: Led, cfg: Optional[LedConfig], brillo: int, automatico: Optio
         hace, ahora = "Nada: no hay conexión con el Arduino", "Apagada"
     else:
         hace = automatico or comportamiento_led(cfg)
-        ahora = f"Encendida al {porcentaje(brillo)}" if brillo > 0 else "Apagada"
+        # De 5 en 5: con una luz que respira, la ficha no tiene que redibujarse en cada fotograma.
+        ahora = f"Encendida al {porcentaje(brillo, 5)}" if brillo > 0 else "Apagada"
     conexion = f"Pin {led.pin} (con PWM), con una resistencia de {RESISTENCIA_LED} hacia GND"
-    return Ficha(f"{led.luz} · LED", QUE_ES_LED, tuple(zip(FILAS, (conexion, hace, ahora))))
+    return Ficha(led.luz, QUE_ES_LED, tuple(zip(FILAS, (conexion, hace, ahora))), tipo="led",
+                 subtitulo=f"LED · pin {led.pin} (PWM)", color=led.color,
+                 nivel=round(brillo / BRILLO_MAX * 20) / 20 if conectado else 0.0, activo=conectado and brillo > 0,
+                 accion="Cambiar qué hace")
 
 
 def ficha_sensor(sensor: Sensor, periodo_ms: Optional[int], ultima: Optional[tuple], conectado: bool) -> Ficha:
@@ -65,6 +76,7 @@ def ficha_sensor(sensor: Sensor, periodo_ms: Optional[int], ultima: Optional[tup
     conexion = (f"Datos al pin {sensor.pin}, alimentado con {sensor.alimentacion} y GND, con una resistencia de "
                 f"{RESISTENCIA_DHT} entre datos y {sensor.alimentacion}")
     hace = f"Mide cada {segundos(periodo_ms)}" if periodo_ms else "Mide cuando el Arduino se lo pide"
+    nivel, activo = None, False
     if not conectado:
         ahora = "Sin conexión con el Arduino"
     elif ultima is None:
@@ -73,4 +85,7 @@ def ficha_sensor(sensor: Sensor, periodo_ms: Optional[int], ultima: Optional[tup
         ahora = "No responde: revisa sus cables y la resistencia"
     else:
         ahora = f"{ultima[0]:.1f} °C y {ultima[1]:.0f} % de humedad"
-    return Ficha(f"Sensor {sensor.nombre}", sensor.descripcion, tuple(zip(FILAS, (conexion, hace, ahora))))
+        nivel, activo = max(0.0, min(1.0, ultima[1] / 100)), True
+    return Ficha(f"Sensor {sensor.nombre}", sensor.descripcion, tuple(zip(FILAS, (conexion, hace, ahora))),
+                 tipo="sensor", subtitulo=f"Sensor de clima · pin {sensor.pin}", color=sensor.color, nivel=nivel,
+                 activo=activo, accion="Ver el clima")
