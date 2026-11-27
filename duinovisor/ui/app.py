@@ -96,6 +96,13 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMix
         self._construir()
         self.protocol("WM_DELETE_WINDOW", self._cerrar)
         self.bind_all("<Control-Return>", lambda e: self.aplicar())
+        # el aviso flotante del pie acompaña a la ventana
+        self.bind("<Configure>", lambda e: e.widget is self and self._construido and self.barra_cambios.recolocar(),
+                  add="+")
+        self.bind("<Unmap>", lambda e: e.widget is self and self._construido and self.barra_cambios.al_minimizar(True),
+                  add="+")
+        self.bind("<Map>", lambda e: e.widget is self and self._construido and self.barra_cambios.al_minimizar(False),
+                  add="+")
         self.al_cambiar()
         self.after(POLL_MS, self._ciclo)
         if demo:
@@ -207,9 +214,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMix
         self._construir_clima(cuerpo)
         self._construir_config(cuerpo)
         self._construir_detalles()
-        self.barra_cambios = BarraCambios(self, self.f, al_cerrar=self._cerrar_barra)
-        self.barra_cambios.grid(row=4, column=0, sticky="ew", padx=self._px(22), pady=(0, self._px(10)))
-        self.barra_cambios.grid_remove()
+        self.barra_cambios = BarraCambios(self, self.f, al_cerrar=self._cerrar_barra)   # flota: no ocupa fila
 
         self._construido = True
         self.mostrar_vista(self.v_vista.get())

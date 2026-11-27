@@ -90,7 +90,7 @@ class CambiosMixin:
             return
         if foto != self._base_ui and not cerrada and plan(*foto, self.aplicado):
             b.mostrar("pendiente", "Tienes cambios sin aplicar",
-                      "El Arduino todavía no los tiene. Pulsa «Aplicar cambios» o Ctrl+Intro.",
+                      "El Arduino aún no los tiene (Ctrl+Intro).",
                       ("Aplicar cambios", self.aplicar))
             return
         if self._listo:
