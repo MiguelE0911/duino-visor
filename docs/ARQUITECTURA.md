@@ -56,8 +56,9 @@ como una sola clase.
 | `widgets/protoboard.py` | El lienzo de la protoboard: zoom, arrastre, teclado, paso del ratón, barra de herramientas y animación |
 | `widgets/dibujo_placa.py` | Cómo se dibuja cada pieza (placa, protoboard, cables, resistencias, LEDs, DHT11) |
 | `widgets/ficha.py` | La tarjeta flotante de la ficha |
-| `widgets/geometria.py` | Cuentas sin Tkinter: curvas de los cables, degradados, encaje y zoom |
-| `widgets/avisos.py` | La barra del pie (cambios sin aplicar) |
+| `widgets/geometria.py` | Cuentas sin Tkinter: curvas de los cables, degradados, encaje, zoom y vista previa |
+| `widgets/raster.py` | Pintar con Pillow: adaptador con la API del Canvas, mesa, LEDs con resplandor y cables resaltados |
+| `widgets/avisos.py` | El aviso flotante de cambios sin aplicar (una ventanita sin bordes que sigue a la principal) |
 | `controladores/secuencias.py` | Iniciar, pausar, seguir y detener animaciones |
 | `controladores/archivos.py` | Escenas y CSV (diálogos de archivo) |
 | `controladores/sensor.py` | Historial de lecturas y alarmas |
@@ -94,8 +95,20 @@ en `tests/firmware/`.
 
 ## Dibujar con Tkinter sin que se trabe
 
-El Canvas no tiene degradados, transparencias ni recorte: se simulan con franjas (`dibujo_placa.degradado_redondo`),
-capas de colores mezclados (`tema.mezclar`) y máscaras. Lo que cambia en cada fotograma (brillo de los LEDs,
-anillo de selección, corriente, ficha) se actualiza con `itemconfigure` y no redibuja la escena. Cuidado con
-`tag_raise`/`tag_lower` de capas grandes en cada fotograma: Tk repinta toda su superficie, y con la pantalla
-escalada (125 %, 150 %) el ciclo de 50 ms deja de dar abasto y la ventana se traba.
+Tk repinta de una vez **el rectángulo que abarca todo lo que cambió** desde el último repintado. Si en un
+fotograma cambian un LED a la izquierda y la ficha abajo a la derecha, se repinta casi todo el lienzo, y el coste
+crece con el número de elementos (con ~2000 elementos vectoriales, ~55 ms: más que el ciclo de 50 ms).
+
+Por eso la vista protoboard tiene dos capas:
+
+- **Lo fijo es una imagen** pintada con Pillow (`widgets/raster.py`): mesa, placa, protoboard, cables y
+  resistencias. `LienzoImagen` imita la parte de la API del Canvas que usa `dibujo_placa`, así las mismas funciones
+  dibujan en la imagen o, si no hay Pillow, en el lienzo. Se pinta al doble de tamaño y se reduce (antialiasing);
+  las letras se escriben después, ya reducida. Con la imagen, repintar todo cuesta ~5 ms.
+- **Lo vivo son pocos elementos**: los LEDs (una imagen por nivel de brillo, en caché), anillos, halos, la barra de
+  herramientas y la ficha. Se cambian con `itemconfigure`, sin redibujar la escena.
+
+Reglas: no hacer `tag_raise`/`tag_lower` de capas grandes en cada fotograma; con zoom o desplazamiento, redibujar
+solo la escena (`_redibujar_escena`); y para algo que dependa de lo que hay bajo el ratón, buscarlo por geometría
+(`_componente_en`) y no por las etiquetas de los elementos, que en la imagen no existen. Para medir, pon la pantalla
+al 125 % o 150 %: es donde se nota.

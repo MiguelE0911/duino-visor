@@ -146,8 +146,8 @@ porque les falta el LED nuevo.
   - **Sensor**: cada cuánto se lee (de 1 s a 1 min; con los detalles abiertos, el valor exacto en ms).
   - **Apariencia**: tema claro u oscuro y color de acento (el botón de la luna o el sol también cambia el tema).
   - Las preferencias se guardan en `%APPDATA%/DuinoVisor/ajustes.json` (en Linux, `~/.config/duinovisor/`).
-- **Cambios sin aplicar**: en cuanto cambias algo que el Arduino todavía no tiene, sube una barra al pie de la
-  ventana con el botón **Aplicar cambios**. Al enviar muestra el progreso y después «Cambios aplicados»; si el
+- **Cambios sin aplicar**: en cuanto cambias algo que el Arduino todavía no tiene, aparece un aviso flotante
+  abajo a la derecha (sin mover nada de la ventana) con el botón **Aplicar cambios**. Al enviar muestra el progreso y después «Cambios aplicados»; si el
   Arduino rechaza una orden explica el motivo y ofrece reintentar. Si deshaces el cambio, la barra se va.
 - **Mostrar detalles** enseña lo técnico: el registro de órdenes enviadas y recibidas, los milisegundos
   exactos de cada LED, el valor PWM y el pin.
@@ -224,7 +224,7 @@ secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en ca
 
 ```bash
 pip install -e ".[pruebas]"
-python -m pytest -q             # 157 pruebas
+python -m pytest -q             # 162 pruebas
 ruff check duinovisor tests     # lint (reglas fijadas en pyproject.toml)
 ```
 
