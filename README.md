@@ -1,43 +1,64 @@
 # DuinoVisor — control de Arduino en tiempo real con Python
 
-App de escritorio (Tkinter + pyserial) con tema oscuro y acento ámbar que detecta sola el Arduino,
-configura 3 LEDs (apagado, fijo con brillo, parpadeo, respiración) y muestra temperatura y humedad
-del DHT11 en vivo. El sketch del Arduino no usa `delay()`: todo va con `millis()`.
+App de escritorio (Tkinter + pyserial), pensada para quien no sabe nada de Arduino, que detecta sola la placa,
+configura sus LEDs (de serie, rojo, verde y amarillo: apagado, fijo con brillo, parpadeo, respiración) y
+muestra temperatura y humedad del DHT11 en vivo. Probada con un **Arduino 101** real. El sketch del Arduino no usa `delay()`: todo va con `millis()`.
 
 Funciones: secuencias (semáforo vial, auto fantástico, alerta) con pausa, velocidad y detención, un
-**semáforo 3D en la ventana que espeja al Arduino**, semáforo térmico, escenas `.json`, exportar lecturas a
+**semáforo 3D y una vista de protoboard que espejan al Arduino**, semáforo térmico, escenas `.json`, exportar lecturas a
 CSV y alarmas por temperatura o humedad.
 
 ## Contenido
 
-| Ruta | Qué es |
-| --- | --- |
-| `arduino/control_leds/control_leds.ino` | Sketch (carpeta y archivo con el mismo nombre, como pide el IDE) |
-| `main.py` | Arranque; `--demo` usa el Arduino simulado |
-| `gui.py` | Ventana Tkinter: tres columnas de tarjetas y barra lateral |
-| `tema.py`, `widgets.py` | Paleta oscura/ámbar y widgets propios dibujados en Canvas (tarjetas, píldoras, deslizador, interruptor, medidor, barras, LED y semáforo 3D) |
-| `protocol.py` | Órdenes, validación, interpretación de líneas, qué enviar al pulsar Aplicar, tabla de secuencias y modelo local que espeja al Arduino (funciones puras) |
-| `arduino_link.py` | Puertos, autodetección, hilo lector con cola, envío |
-| `grafica.py` | Gráfica de área en vivo sobre un Canvas |
-| `escenas.py`, `exportar.py`, `alarmas.py` | Escenas `.json` validadas, CSV de lecturas y alarmas con histéresis |
-| `simulador.py` | Arduino falso con la misma lógica del sketch |
-| `docs/vista_previa_widgets.png` | Vista previa de los widgets (semáforo en cuatro estados, medidor, barras, botones, gráfica) |
-| `tests/` | `test_protocol`, `test_extras`, `test_simulador`, `test_gui_logica` (Python) y `test_sketch` (compila el `.ino` con g++ contra un Arduino simulado) |
+El código está organizado en capas; cada una solo depende de las de dentro (la prueba
+`tests/test_arquitectura.py` lo hace cumplir). Detalles y guía para añadir funciones en
+[`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
+
+```
+duino-visor/
+├── main.py                     atajo: python main.py [--demo]
+├── pyproject.toml              paquete, dependencias y configuración de pytest
+├── duinovisor/
+│   ├── __main__.py             arranque (python -m duinovisor)
+│   ├── dominio/                reglas puras: sin Tkinter, sin puerto serie, sin archivos
+│   │   ├── leds.py             LedConfig, validación y brillo en cada instante
+│   │   ├── protocolo.py        órdenes, respuestas y qué enviar al pulsar Aplicar
+│   │   ├── secuencias.py       tabla de animaciones y su copia local
+│   │   ├── termometro.py       semáforo térmico con histéresis
+│   │   ├── alarmas.py          alarmas por máximo/mínimo con histéresis
+│   │   └── placa.py            catálogo de componentes: cada LED (letra, pin, color) y el DHT11
+│   ├── hardware/               enlace.py (puerto serie, autodetección) y simulador.py
+│   ├── almacenamiento/         escenas.py, exportar.py (CSV) y preferencias.py
+│   └── ui/                     única capa con Tkinter
+│       ├── app.py              App: une vistas y controladores, bucle y recepción
+│       ├── tema.py             temas claro/oscuro, acentos y tipografía
+│       ├── constantes.py       textos y ajustes compartidos de la ventana
+│       ├── estado_led.py       variables editables de cada LED
+│       ├── vistas/             cabecera, luces, clima, detalles, ajustes (crean widgets)
+│       ├── controladores/      conexión, envío, espejo, secuencias, archivos, sensor
+│       └── widgets/            base, contenedores, botones, controles, luces, indicadores,
+│                               grafica y protoboard (dibujados en Canvas)
+├── firmware/control_leds/      sketch (carpeta y archivo con el mismo nombre, como pide el IDE)
+├── docs/                       ARQUITECTURA.md y capturas
+└── tests/                      misma estructura: dominio/, hardware/, almacenamiento/, ui/,
+                                firmware/ (contrato con el .ino y pruebas con g++) y test_arquitectura.py
+```
 
 ## Instalación y uso
 
 ```bash
-pip install pyserial            # Python 3.10+
+pip install -e .                # Python 3.10+; instala pyserial y el comando «duinovisor»
 # Linux (Ubuntu/Debian): Tkinter y permisos del puerto
 sudo apt install python3-tk
 sudo usermod -aG dialout $USER  # cerrar sesión y volver a entrar
 
-python main.py --demo           # sin placa
-python main.py                  # con la placa: se conecta sola
+python -m duinovisor --demo     # sin placa (también: python main.py --demo)
+python -m duinovisor            # con la placa: se conecta sola
 ```
 
-Cargar el sketch: en el IDE de Arduino instala las librerías **DHT sensor library** y
-**Adafruit Unified Sensor**, abre `control_leds.ino`, elige la placa (*Arduino 101*, o *Arduino UNO*) y sube.
+Cargar el sketch: en el IDE de Arduino instala el paquete de placas **Intel Curie Boards** (para el Arduino 101) y
+las librerías **DHT sensor library** y **Adafruit Unified Sensor**; abre `firmware/control_leds/control_leds.ino`,
+elige la placa (*Arduino 101*, o *Arduino UNO*) y sube.
 La app solo funciona con este sketch cargado: con otro (por ejemplo un ejemplo de la librería DHT11) la placa
 no responde a `PING`, la autodetección falla y las órdenes quedan «sin respuesta».
 Cierra el Monitor Serie antes de abrir la app (el puerto solo lo puede usar un programa).
@@ -58,14 +79,30 @@ Probar a mano desde el Monitor Serie (9600 baudios, "Nueva línea"): `PING`, `LE
 | DHT11 GND | GND | directo |
 
 Sensor suelto de 4 patas: la tercera no se conecta. En el Arduino 101 solo 3, 5, 6 y 9 tienen PWM (10 y 11 no),
-por eso los LEDs van en 3, 5 y 6.
+por eso los LEDs van en 3, 5 y 6. Montaje comprobado con la placa real.
+
+### Añadir un LED
+
+Los LEDs salen de una sola lista, `LEDS` en `duinovisor/dominio/placa.py`. Para sumar uno (por ejemplo azul en
+el pin 9, el último con PWM libre en el 101):
+
+1. Una línea en `LEDS`: `Led("B", "Azul", "Luz azul", pin=9, color="#3b82f6", fila=3)`. `fila` es su
+   posición de arriba abajo en el semáforo.
+2. La misma línea en la tabla `leds[]` del sketch, en el mismo orden: `{ 'B',  9, M_OFF, 0, 0, 0, 0, 0, false, -1 },`
+3. Montarlo como los otros: pin → 220 Ω → ánodo; cátodo → GND.
+
+El resto se adapta solo: protocolo, simulador, semáforo, protoboard, chips, editor y escenas. Las animaciones
+lo dejan apagado hasta que algún paso lo nombre: en Python, `(150, {"B": 255})` en
+`dominio/secuencias.py`; en el sketch, una columna más en ese paso. `tests/firmware/test_contrato.py`
+avisa si la lista de Python y la del sketch no coinciden. Las escenas guardadas antes no se podrán cargar,
+porque les falta el LED nuevo.
 
 ## Protocolo (9600 baudios, texto, una orden por línea)
 
 | PC → Arduino | Qué hace |
 | --- | --- |
 | `PING` | Responde `PONG OAC-LEDS 1` |
-| `LED <R\|G\|Y> OFF` | Apaga |
+| `LED <R\|G\|Y> OFF` | Apaga (`<c>` es la letra de un LED de `placa.py`; si no existe responde `ERR led R G Y`) |
 | `LED <c> ON <brillo 0-255>` | Encendido fijo |
 | `LED <c> BLINK <brillo> <on_ms> <off_ms>` | Intermitente (mínimo 20 ms) |
 | `LED <c> FADE <brillo> <periodo_ms>` | Respiración (mínimo 200 ms) |
@@ -80,6 +117,24 @@ por eso los LEDs van en 3, 5 y 6.
 | `DATA T=24.0 H=51.0` / `DATA ERR` | Cada periodo del DHT / el sensor no respondió |
 | `OK …` / `ERR <motivo>` | Respuesta a cada orden |
 
+## La ventana
+
+![DuinoVisor en tema claro](docs/vista_previa.png)
+
+- **Luces**: el semáforo ocupa el centro. Haz clic en una luz (o en su chip de abajo) y elige en el panel de la
+  derecha qué hace: *Apagada*, *Encendida*, *Parpadea* o *Respira*, con su brillo y un ritmo *Lento / Normal /
+  Rápido*. El conmutador **Semáforo | Protoboard** muestra el montaje real (placa, protoboard, resistencias,
+  cables y DHT11); ahí también se elige un LED con un clic, y al pasar el ratón se ve su pin.
+  Debajo, las **Animaciones** (secuencias). Los cambios se envían con **Aplicar cambios** (o Ctrl+Intro).
+- **Clima**: temperatura, humedad, gráfica de los últimos minutos, avisos y el semáforo según la temperatura.
+- **Mostrar detalles** enseña lo técnico: puerto serie y conexión, registro de órdenes enviadas y recibidas,
+  milisegundos exactos de cada LED, valor PWM, pin y cada cuánto se lee el sensor.
+- **⋯** abre el menú: guardar o cargar escena, exportar CSV y **Ajustes** (tema claro u oscuro y color de
+  acento). El botón de la luna o el sol cambia de tema al momento; la elección se recuerda.
+- En Windows con escalado de pantalla (125 %, 150 %) la ventana se dibuja a la resolución real, sin verse borrosa.
+
+![Vista de protoboard](docs/vista_protoboard.png)
+
 ## Secuencias y semáforo espejo
 
 | Secuencia | Pasos |
@@ -91,15 +146,15 @@ por eso los LEDs van en 3, 5 y 6.
 La velocidad escala todas las duraciones (mínimo 20 ms por paso). Una orden `LED` manual, `TERMO` o `SEQ` nuevo
 cancela lo anterior: **la última orden manda**.
 
-El semáforo 3D y los LEDs de cada tarjeta no leen nada del Arduino: calculan lo mismo con el modelo de
-`protocol.py` (`SecuenciaLocal`, `brillo_en`, `zona_termo`), arrancando en el instante en que el Arduino
+El semáforo 3D, la protoboard y los chips de cada luz no leen nada del Arduino: calculan lo mismo con el modelo de
+`duinovisor/dominio` (`SecuenciaLocal`, `brillo_en`, `zona_termo`), arrancando en el instante en que el Arduino
 confirmó la orden con `OK`. Las pruebas comparan ese modelo con el sketch milisegundo a milisegundo.
 Pausar, seguir o detener en la app manda la orden al Arduino, y si se desconecta o se cierra la app con una
 secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en cambio, sigue funcionando solo.
 
 ## Escenas, CSV y alarmas
 
-- **Escenas**: *Guardar escena* y *Cargar escena* guardan en un `.json` los tres LEDs, el periodo del sensor, el
+- **Escenas**: *Guardar escena* y *Cargar escena* guardan en un `.json` todos los LEDs, el periodo del sensor, el
   semáforo térmico y la secuencia elegida. Al cargar se valida todo; si algo está mal no se cambia nada. Después
   hay que pulsar *Aplicar* para enviarla.
 - **Exportar CSV**: guarda cada lectura con fecha y hora (las fallidas quedan como «error de sensor»). Se
@@ -115,8 +170,8 @@ secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en ca
 - **Semáforo térmico con histéresis de 1 °C**: sube de zona al instante y baja solo si la temperatura cae
   1 °C por debajo del umbral. El DHT11 tiene ±2 °C de error y resolución de 1 °C; sin histéresis parpadearía.
 - **Prioridad entre TERMO y los LEDs**: la última orden manda. Una orden `LED` cancela el semáforo y deja
-  los LEDs apagados salvo el ordenado. En la ventana, al activar el semáforo los paneles de LED se
-  desactivan; al desactivarlo, Aplicar manda `TERMO OFF` y reenvía los tres LEDs. Si el sensor falla
+  los LEDs apagados salvo el ordenado. En la ventana, al activar el semáforo el editor de LEDs muestra
+  un aviso en lugar de los controles; al desactivarlo, Aplicar manda `TERMO OFF` y reenvía todos los LEDs. Si el sensor falla
   (`DATA ERR`), el semáforo conserva la última zona.
 - **Respiración con corrección gamma** (brillo × x²): una rampa lineal de PWM se ve poco natural.
 - **Línea de más de 63 caracteres**: se descarta y se responde `ERR linea larga`.
@@ -128,14 +183,12 @@ secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en ca
 
 ## Limitaciones conocidas
 
-- **No se ha probado con la placa real.** El sketch se compila y prueba contra un Arduino simulado en C++
-  (más de 50 pruebas, incluida la comparación con el modelo de la app); la lógica de la ventana se probó con un
-  Tkinter de mentira y los widgets se dibujaron con un lienzo de prueba para revisar su aspecto
-  (`docs/vista_previa_widgets.png`). **La ventana Tkinter real nunca se ha abierto**: puede haber detalles de
-  diseño por ajustar (tipografías, espacios, colores del desplegable de puertos).
+- **Probada con la placa real (Arduino 101) en Windows 11.** Además, el sketch se compila y prueba contra un
+  Arduino simulado en C++ (más de 50 pruebas, incluida la comparación con el modelo de la app) y la lógica de la
+  ventana se prueba con un Tkinter de mentira. Falta probarla en Linux.
 - **Lectura del DHT11**: la librería desactiva las interrupciones unos 4–5 ms y bloquea ~25 ms. Una orden que
   llegue justo entonces podría perder algún carácter; por eso la app espera confirmación y reintenta.
-  Si lo ves en la placa real, avísame o sube a 115200 baudios y mide.
+  Si llega a pasar, sube a 115200 baudios y mide.
 - **LEDs virtuales**: aparecen siempre, también con la placa real, calculados desde lo que el Arduino confirmó.
   Si alguien cambia los LEDs sin pasar por la app (por ejemplo desde el Monitor Serie), el espejo no se entera.
 - **Tkinter no dibuja sombras suaves ni transparencias**: el brillo de los LEDs usa anillos concéntricos y el
@@ -144,8 +197,18 @@ secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en ca
 ## Pruebas
 
 ```bash
-python -m pytest tests -q       # el test del sketch necesita g++
+pip install -e ".[pruebas]"
+python -m pytest -q             # 130 pruebas
+ruff check duinovisor tests     # lint (reglas fijadas en pyproject.toml)
 ```
+
+Las pruebas de comportamiento del sketch (`tests/firmware/test_sketch.py`) compilan el `.ino` con **g++** contra un
+Arduino simulado; sin g++ se omiten. Para instalarlo: en Windows `winget install BrechtSanders.WinLibs.POSIX.UCRT`
+(y abrir una terminal nueva), en Ubuntu/Debian `sudo apt install g++`. `tests/firmware/test_contrato.py` compara las
+tablas del sketch con las de Python y no necesita g++.
+
+Para comprobar que el sketch compila para la placa sin subirlo, con el `arduino-cli` que trae el IDE:
+`arduino-cli compile --fqbn Intel:arc32:arduino_101 firmware/control_leds`.
 
 ## Extras pendientes
 
