@@ -5,6 +5,8 @@ cambiar de tema basta con llamar a `aplicar()` y volver a construir la ventana.
 """
 from __future__ import annotations
 
+from duinovisor.dominio.placa import LEDS
+
 # ---------------------------------------------------------------- paletas
 PALETAS = {
     "claro": {
@@ -48,7 +50,7 @@ ACENTOS = {
 }
 TEMA_POR_DEFECTO, ACENTO_POR_DEFECTO = "claro", "azul"
 
-LED_BASE = {"R": "#e5533d", "G": "#4fbf5f", "Y": "#f2c14e"}
+LED_BASE = {led.id: led.color for led in LEDS}            # el color de cada LED real (dominio/placa.py)
 
 # Escala de la pantalla (1.0 = 96 ppp). La fija la App al arrancar; los lienzos la usan para
 # dibujar al tamaño correcto en pantallas con escalado (125 %, 150 %...).

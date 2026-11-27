@@ -6,13 +6,15 @@ from __future__ import annotations
 
 from typing import Optional
 
+from duinovisor.dominio.leds import COLORES
 from duinovisor.dominio.protocolo import Paso
 
-# Cada paso: (rojo, verde, amarillo, duración en ms)
-SECUENCIAS: dict[str, list[tuple[int, int, int, int]]] = {
-    "VIAL": [(0, 255, 0, 5000), (0, 0, 255, 1500), (255, 0, 0, 5000)],
-    "FANTASTICO": [(255, 0, 0, 150), (0, 0, 255, 150), (0, 255, 0, 150), (0, 0, 255, 150)],
-    "ALERTA": [(0, 0, 255, 500), (0, 0, 0, 500)],
+# Cada paso: (duración en ms, {LED: brillo}). Los LEDs que el paso no nombra quedan apagados, así que añadir
+# un LED nuevo no obliga a tocar las animaciones existentes.
+SECUENCIAS: dict[str, list[tuple[int, dict[str, int]]]] = {
+    "VIAL": [(5000, {"G": 255}), (1500, {"Y": 255}), (5000, {"R": 255})],
+    "FANTASTICO": [(150, {"R": 255}), (150, {"Y": 255}), (150, {"G": 255}), (150, {"Y": 255})],
+    "ALERTA": [(500, {"Y": 255}), (500, {})],
 }
 NOMBRES_SEQ = {"VIAL": "Semáforo vial", "FANTASTICO": "Auto fantástico", "ALERTA": "Alerta amarilla"}
 VEL_MIN, VEL_MAX = 25, 400
@@ -86,7 +88,7 @@ class SecuenciaLocal:
 
     def paso(self, t_ms: float) -> int:
         pasos = SECUENCIAS[self.nombre]
-        duraciones = [duracion_paso(p[3], self.vel) for p in pasos]
+        duraciones = [duracion_paso(ms, self.vel) for ms, _ in pasos]
         e = self._transcurrido(t_ms) % sum(duraciones)
         acumulado = 0
         for i, d in enumerate(duraciones):
@@ -96,11 +98,11 @@ class SecuenciaLocal:
         return len(pasos) - 1
 
     def brillos(self, t_ms: float) -> Optional[dict]:
-        """{"R": .., "G": .., "Y": ..} del paso actual, o None si no hay secuencia."""
+        """{LED: brillo} de todos los LEDs en el paso actual, o None si no hay secuencia."""
         if not self.activa:
             return None
-        r, g, y, _ = SECUENCIAS[self.nombre][self.paso(t_ms)]
-        return {"R": r, "G": g, "Y": y}
+        _, brillos = SECUENCIAS[self.nombre][self.paso(t_ms)]
+        return {c: brillos.get(c, 0) for c in COLORES}
 
     def sincronizar(self, valor: Optional[tuple[str, int, bool]], t_ms: float) -> None:
         """Ajusta la copia a lo que el Arduino confirmó (Aplicado.seq)."""

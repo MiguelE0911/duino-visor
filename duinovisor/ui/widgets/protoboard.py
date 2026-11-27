@@ -1,4 +1,4 @@
-"""Vista de protoboard: la placa Arduino, la protoboard, los tres LEDs con su resistencia y el DHT11.
+"""Vista de protoboard: la placa Arduino, la protoboard, los LEDs del catálogo con su resistencia y el DHT11.
 
 Los LEDs brillan igual que los del Arduino (mismo espejo que el semáforo) y se pueden elegir con un clic
 para cambiar su comportamiento. El montaje es el del README.
@@ -8,7 +8,7 @@ from __future__ import annotations
 import tkinter as tk
 
 from duinovisor.dominio.leds import COLORES
-from duinovisor.dominio.placa import PIN_DHT, PINES, RESISTENCIA_LED
+from duinovisor.dominio.placa import DHT, LEDS, PIN_DHT, PINES, RESISTENCIA_LED
 from duinovisor.ui import tema as T
 from duinovisor.ui.constantes import NOMBRE_LUZ
 from duinovisor.ui.widgets.base import rect_redondo
@@ -28,10 +28,17 @@ COLUMNAS, X0_COL, PASO = 30, 398, 13
 FILAS_ARRIBA = [108 + i * PASO for i in range(5)]        # a-e
 FILAS_ABAJO = [196 + i * PASO for i in range(5)]         # f-j
 RIEL_POS, RIEL_NEG = 280, 294
-COLS_LED = (4, 11, 18)                                   # columna del ánodo de cada LED (de izquierda a derecha)
 COL_DHT = 24                                             # VCC, DATA y GND en 24, 25 y 26
+# Columna del ánodo de cada LED, de izquierda a derecha, repartidas antes del DHT11 (3 LEDs: 4, 11 y 18).
+_PASO_LED = min(7, (COL_DHT - 3) // max(1, len(LEDS)))
+COLS_LED = tuple(4 + i * _PASO_LED for i in range(len(LEDS)))
 
-COLOR_CABLE = {"R": "#d9480f", "Y": "#e8a600", "G": "#2b8a3e", "5V": "#c92a2a", "GND": "#212529", "DHT": "#1c7ed6"}
+COLOR_CABLE = {"5V": "#c92a2a", "GND": "#212529", "DHT": "#1c7ed6"}
+
+
+def color_cable(id_led: str) -> str:
+    """Cable de cada LED: su mismo color, algo más oscuro."""
+    return T.mezclar(T.LED_BASE[id_led], "#000000", 0.12)
 
 
 def col_x(c: int) -> float:
@@ -194,7 +201,7 @@ class Protoboard(tk.Canvas):
             tag = f"sel_{c}"
             px = pin_x(str(PINES[c]))
             medio = (px + xa) / 2
-            self._cable((px, HEADER_D[1], medio, 6 + i * 4, xa, FILAS_ARRIBA[0]), COLOR_CABLE[c], tag)
+            self._cable((px, HEADER_D[1], medio, 6 + i * 4, xa, FILAS_ARRIBA[0]), color_cable(c), tag)
             self._resistencia(xa, FILAS_ARRIBA[3], FILAS_ABAJO[0], ("#c92a2a", "#c92a2a", "#8a4b08", "#d4af37"), tag)
             self._cable((xk, FILAS_ABAJO[4], xk + 4, RIEL_NEG - 12, xk, RIEL_NEG), COLOR_CABLE["GND"], tag, 2.6)
             cx, cy = (xa + xk) / 2, FILAS_ABAJO[2]
@@ -217,7 +224,7 @@ class Protoboard(tk.Canvas):
             for j in range(3):
                 x, y = xv - 8 + j * 18, 94 + k * 12
                 self.create_rectangle(x - 4, y - 3, x + 4, y + 3, fill="#1c7ed6", outline="")
-        self.create_text(xd, 160, text="DHT11", fill=T.TEXTO_2, font=self._f(8, True))
+        self.create_text(xd, 160, text=DHT.nombre, fill=T.TEXTO_2, font=self._f(8, True))
         self._cable((xv, FILAS_ABAJO[4], xv - 4, RIEL_POS - 12, xv, RIEL_POS), COLOR_CABLE["5V"], ancho=2.6)
         self._cable((xg, FILAS_ABAJO[4], xg + 4, RIEL_NEG - 12, xg, RIEL_NEG), COLOR_CABLE["GND"], ancho=2.6)
         self._resistencia(xd, FILAS_ABAJO[3], RIEL_POS, ("#8a4b08", "#212529", "#e8590c", "#d4af37"))

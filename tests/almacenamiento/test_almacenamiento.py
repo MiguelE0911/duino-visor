@@ -7,15 +7,15 @@ import pytest
 
 from duinovisor.almacenamiento import escenas, preferencias
 from duinovisor.almacenamiento.exportar import escribir_csv
-from duinovisor.dominio.leds import LedConfig
+from duinovisor.dominio.leds import COLORES, LedConfig
 
 
 def leds():
-    return {
+    configurados = {
         "R": LedConfig(color="R", modo="BLINK", brillo=255, on_ms=300, off_ms=100),
         "G": LedConfig(color="G", modo="FADE", brillo=200, periodo_ms=2000),
-        "Y": LedConfig(color="Y", modo="OFF"),
     }
+    return {c: configurados.get(c, LedConfig(color=c, modo="OFF")) for c in COLORES}
 
 
 # ---------------------------------------------------------------- escenas

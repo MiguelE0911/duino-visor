@@ -30,7 +30,7 @@ from duinovisor.dominio.secuencias import SecuenciaLocal
 from duinovisor.hardware.enlace import Enlace
 from duinovisor.hardware.simulador import ArduinoSimulado
 from duinovisor.ui import tema as T
-from duinovisor.ui.constantes import NOMBRE_LUZ, POLL_MS
+from duinovisor.ui.constantes import NOMBRE_LUZ, ORDEN_SEMAFORO, POLL_MS
 from duinovisor.ui.controladores.archivos import ArchivosMixin
 from duinovisor.ui.controladores.conexion import ConexionMixin
 from duinovisor.ui.controladores.envio import EnvioMixin
@@ -111,7 +111,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
     # ------------------------------------------------------------------ estado (variables)
     def _crear_variables(self):
         self.paneles = {c: LedUI(c, self.al_cambiar) for c in COLORES}
-        self.v_sel = tk.StringVar(value="R")                       # LED que se edita
+        self.v_sel = tk.StringVar(value=ORDEN_SEMAFORO[0])        # LED que se edita
         self.v_vista = tk.StringVar(value="semaforo")              # pestaña: semaforo (Luces) o clima
         self.v_modo_luces = tk.StringVar(value="semaforo")         # semaforo o protoboard
         self.v_detalles = tk.BooleanVar(value=False)
@@ -121,7 +121,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, AjustesMixin,
         self.v_pendiente = tk.StringVar(value="")
         self.v_puerto = tk.StringVar()
         self.v_sem = tk.StringVar(value="Sin conexión")
-        self.v_titulo_editor = tk.StringVar(value=NOMBRE_LUZ["R"])
+        self.v_titulo_editor = tk.StringVar(value=NOMBRE_LUZ[ORDEN_SEMAFORO[0]])
         self.v_bloqueo = tk.StringVar(value="")
         # secuencias
         self.v_seq = tk.StringVar(value="VIAL")

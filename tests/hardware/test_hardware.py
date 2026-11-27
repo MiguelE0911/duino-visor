@@ -1,6 +1,6 @@
 import time
 
-from duinovisor.dominio.leds import MODOS, LedConfig
+from duinovisor.dominio.leds import COLORES, MODOS, LedConfig
 from duinovisor.dominio.protocolo import comando_dht, comando_led, comando_termo
 from duinovisor.hardware.enlace import Enlace
 from duinovisor.hardware.simulador import ArduinoSimulado
@@ -14,7 +14,7 @@ def test_ping_y_errores():
     s = sim()
     assert s.procesar("PING") == ["PONG OAC-LEDS 1"]
     assert s.procesar("LED R ON 300") == ["ERR brillo 0-255"]
-    assert s.procesar("LED Q ON 1") == ["ERR led R G Y"]
+    assert s.procesar("LED Q ON 1") == ["ERR led " + " ".join(COLORES)]       # ERR led R G Y
     assert s.procesar("DHT 10") == ["ERR periodo 1000-3600000 ms"]
     assert s.procesar("") == []
 
@@ -43,7 +43,7 @@ def test_termo_zonas():
 
 def test_todas_las_ordenes_que_arma_el_protocolo_las_acepta_el_simulador():
     s = sim()
-    for c in "RGY":
+    for c in COLORES:
         for modo in MODOS:
             cmd = comando_led(LedConfig(color=c, modo=modo, brillo=100, on_ms=50, off_ms=50, periodo_ms=500))
             assert s.procesar(cmd) == [f"OK LED {c}"], cmd
@@ -107,7 +107,7 @@ def test_simulador_seq_vial_pausa_y_off():
     assert "STATE SEQ VIAL 100 PAUSA" in s.procesar("STATUS")
     s.procesar("SEQ SEGUIR")
     s.procesar("SEQ OFF")
-    assert [s.brillo_actual(c) for c in "RGY"] == [0, 0, 0]
+    assert {s.brillo_actual(c) for c in COLORES} == {0}
     assert "STATE SEQ OFF" in s.procesar("STATUS")
 
 
@@ -119,9 +119,9 @@ def test_simulador_seq_errores_y_cancelaciones():
     assert s.procesar("SEQ PAUSA") == ["ERR sin secuencia"]
     s.procesar("SEQ VIAL")
     s.procesar("LED R ON 50")
-    assert [s.brillo_actual(c) for c in "RGY"] == [50, 0, 0]
+    assert {c: s.brillo_actual(c) for c in COLORES} == {c: 50 if c == "R" else 0 for c in COLORES}
     reloj[0] = 8
-    assert [s.brillo_actual(c) for c in "RGY"] == [50, 0, 0]         # la secuencia ya no corre
+    assert {c: s.brillo_actual(c) for c in COLORES} == {c: 50 if c == "R" else 0 for c in COLORES}   # ya no corre
     s.procesar("SEQ ALERTA")
     s.procesar("TERMO 22 28")
     assert not s.seq.activa

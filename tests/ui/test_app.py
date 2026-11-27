@@ -10,6 +10,8 @@ import types
 
 import pytest
 
+from duinovisor.dominio.leds import COLORES
+
 
 class _Widget:
     def __init__(self, *args, **kw):
@@ -178,11 +180,11 @@ def test_semaforo_termico_espejo_y_datos_en_vivo(gui):
     assert len(gui.grafica.temperaturas) >= 1
     assert gui.zona == gui.sim.zona >= 0                              # la ventana y el Arduino coinciden
     if gui.zona != 2:                                                 # en zona roja el LED parpadea
-        assert gui._brillos_espejo() == {c: 255 if gui.sim.leds[c]["modo"] == "ON" else 0 for c in "RGY"}
+        assert gui._brillos_espejo() == {c: 255 if gui.sim.leds[c]["modo"] == "ON" else 0 for c in COLORES}
     gui.v_termo.set(False)
     gui.aplicar()
     assert [x.texto for x in [gui.paso_actual] + gui.pendientes][0] == "TERMO OFF"
-    assert len([gui.paso_actual] + gui.pendientes) == 4
+    assert len([gui.paso_actual] + gui.pendientes) == 1 + len(COLORES)      # TERMO OFF y cada LED
     assert esperar(gui, lambda: terminado(gui))
     assert not gui.sim.termo_activo and gui.zona == -1
 
@@ -195,7 +197,7 @@ def test_secuencia_iniciar_pausar_seguir_cambiar_y_detener(gui):
     enviar_y_esperar(gui, gui.alternar_secuencia)
     assert gui.aplicado.seq == ("ALERTA", 200, False)
     assert gui.sim.seq.activa and gui.sim.seq.vel == 200 and gui.secuencia.activa
-    assert gui.b_seq.texto == "Pausar" and set(gui._brillos_espejo()) == {"R", "G", "Y"}
+    assert gui.b_seq.texto == "Pausar" and set(gui._brillos_espejo()) == set(COLORES)
 
     enviar_y_esperar(gui, gui.alternar_secuencia)                       # pausa
     assert gui.aplicado.seq[2] and gui.sim.seq.pausada and gui.secuencia.pausada
@@ -211,7 +213,7 @@ def test_secuencia_iniciar_pausar_seguir_cambiar_y_detener(gui):
     enviar_y_esperar(gui, gui.detener_secuencia)
     assert not gui.sim.seq.activa and gui.aplicado.seq is None and not gui.secuencia.activa
     assert gui.b_seq.texto == "Iniciar"
-    assert gui._brillos_espejo() == {"R": 0, "G": 0, "Y": 0}
+    assert gui._brillos_espejo() == {c: 0 for c in COLORES}
 
 
 def test_orden_manual_cancela_secuencia_en_arduino_y_ventana(gui):
@@ -223,7 +225,7 @@ def test_orden_manual_cancela_secuencia_en_arduino_y_ventana(gui):
     # los paneles están bloqueados mientras corre la secuencia, pero Aplicar sigue siendo válido
     enviar_y_esperar(gui, gui.aplicar)
     assert not gui.sim.seq.activa and not gui.secuencia.activa and gui.aplicado.seq is None
-    assert gui._brillos_espejo() == {"R": 80, "G": 0, "Y": 0}
+    assert gui._brillos_espejo() == {c: 80 if c == "R" else 0 for c in COLORES}
 
 
 def test_cerrar_o_desconectar_detiene_la_secuencia_del_arduino(gui):

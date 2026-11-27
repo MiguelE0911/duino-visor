@@ -35,6 +35,7 @@ struct SerialShim {
   void print(double v, int d = 2) { char b[32]; snprintf(b, sizeof b, "%.*f", d, v); linea += b; }
   template <class T> void println(T v) { print(v); flushLinea(); }
   void println(double v, int d) { print(v, d); flushLinea(); }
+  void println() { flushLinea(); }
   void flushLinea() { printf("< %s\n", linea.c_str()); linea.clear(); }
 };
 extern SerialShim Serial;

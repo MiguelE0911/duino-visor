@@ -11,9 +11,9 @@ import queue
 import threading
 import time
 
+from duinovisor.dominio.leds import COLORES
 from duinovisor.dominio.secuencias import SECUENCIAS, VEL_MAX, VEL_MIN, SecuenciaLocal
-
-HISTERESIS = 1.0
+from duinovisor.dominio.termometro import leds_de_zona, zona_termo
 
 
 class ArduinoSimulado:
@@ -27,7 +27,7 @@ class ArduinoSimulado:
         self._lock = threading.Lock()
         # estado, igual que el sketch
         self.leds = {c: dict(modo="OFF", brillo=0, on=0, off=0, periodo=0, t0=0, fase=True)
-                     for c in "RGY"}
+                     for c in COLORES}
         self.periodo_dht = 2000
         self._ultimo_dht = 0
         self.termo_activo = False
@@ -148,7 +148,7 @@ class ArduinoSimulado:
         if len(tok) < 3:
             return ["ERR faltan argumentos"]
         if tok[1] not in self.leds:
-            return ["ERR led R G Y"]
+            return ["ERR led " + " ".join(COLORES)]
         led, modo, n = self.leds[tok[1]], tok[2], len(tok)
         brillo_err = ["ERR brillo 0-255"]
         if modo == "OFF":
@@ -204,7 +204,7 @@ class ArduinoSimulado:
             (self.seq.pausar if accion == "PAUSA" else self.seq.seguir)(ahora)
             return ["OK SEQ"]
         if accion not in SECUENCIAS:
-            return ["ERR secuencia VIAL FANTASTICO ALERTA"]
+            return ["ERR secuencia " + " ".join(SECUENCIAS)]
         vel = 100
         if len(tok) == 3:
             vel = self._num(tok[2])
@@ -240,24 +240,16 @@ class ArduinoSimulado:
         return int(led["brillo"] * (x / mitad) ** 2 + 0.5)
 
     def _evaluar_termo(self, t: float, ahora: int):
-        t_min, t_max = self.termo
-        bruta = 0 if t < t_min else (1 if t < t_max else 2)
-        nueva = self.zona
-        if self.zona < 0 or bruta > self.zona:
-            nueva = bruta
-        elif bruta < self.zona:
-            umbral = t_max if self.zona == 2 else t_min
-            if t < umbral - HISTERESIS:
-                nueva = bruta
+        nueva = zona_termo(t, self.zona, *self.termo)
         if nueva != self.zona:
             self.zona = nueva
             self._apagar_todos()
-            if nueva == 0:
-                self.leds["G"].update(modo="ON", brillo=255)
-            elif nueva == 1:
-                self.leds["Y"].update(modo="ON", brillo=255)
-            else:
-                self.leds["R"].update(modo="BLINK", brillo=255, on=250, off=250, t0=ahora, fase=True)
+            for c, cfg in leds_de_zona(nueva).items():            # igual que aplicarZona() del sketch
+                if cfg.modo == "ON":
+                    self.leds[c].update(modo="ON", brillo=cfg.brillo)
+                elif cfg.modo == "BLINK":
+                    self.leds[c].update(modo="BLINK", brillo=cfg.brillo, on=cfg.on_ms, off=cfg.off_ms,
+                                        t0=ahora, fase=True)
 
     def lectura(self, ahora: int) -> tuple[int, int]:
         """Temperatura y humedad simuladas (el DHT11 mide en enteros)."""

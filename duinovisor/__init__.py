@@ -1,4 +1,4 @@
-"""DuinoVisor: control de un Arduino (3 LEDs y un DHT11) en tiempo real desde el PC.
+"""DuinoVisor: control de un Arduino (LEDs y un sensor DHT11) en tiempo real desde el PC.
 
 Capas, de dentro hacia fuera (cada una solo importa de las anteriores):
 

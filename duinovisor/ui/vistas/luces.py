@@ -65,7 +65,7 @@ class LucesMixin:
         self.editor = tk.Frame(self.t_editor.contenido, bg=T.SUPERFICIE)
         self.editor.pack(fill="x")
 
-        tseq = Tarjeta(lateral, "Animaciones", f, subtitulo="Las tres luces cambian solas siguiendo un patrón.")
+        tseq = Tarjeta(lateral, "Animaciones", f, subtitulo="Todas las luces cambian solas siguiendo un patrón.")
         tseq.pack(fill="x", pady=(0, self._px(14)))
         a = tseq.contenido
         Segmentado(a, self.v_seq, SECUENCIAS, ancho=ANCHO_LATERAL, columnas=1, alto_fila=34, hueco=6,
@@ -88,7 +88,7 @@ class LucesMixin:
         """El semáforo crece hasta llenar el hueco disponible (con un tope para que no sea enorme)."""
         s = T.ESCALA
         alto = e.height / s * 0.94
-        ancho = min(e.width / s * 0.8, alto * SemaforoVirtual.BASE_W / SemaforoVirtual.BASE_H, 210)
+        ancho = min(e.width / s * 0.8, alto * self.semaforo.BASE_W / self.semaforo.BASE_H, 210)
         self.semaforo.redimensionar(max(90, ancho))
 
     def _construir_editor(self):

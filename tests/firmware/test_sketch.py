@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from duinovisor.dominio.leds import LedConfig, brillo_en
+from duinovisor.dominio.leds import COLORES, LedConfig, brillo_en
+from duinovisor.dominio.placa import PINES
 from duinovisor.dominio.secuencias import SecuenciaLocal
 
 AQUI = Path(__file__).parent
@@ -67,7 +68,7 @@ def test_led_off(binario):
     ("LED R ON 300", "ERR brillo 0-255"),
     ("LED R ON -1", "ERR brillo 0-255"),
     ("LED R ON abc", "ERR brillo 0-255"),
-    ("LED X ON 10", "ERR led R G Y"),
+    ("LED X ON 10", "ERR led " + " ".join(COLORES)),            # ERR led R G Y
     ("LED R BLINK 255 10 100", "ERR tiempo 20-60000 ms"),
     ("LED R FADE 255 100", "ERR periodo 200-60000 ms"),
     ("LED R SALTAR", "ERR modo"),
@@ -250,14 +251,14 @@ def test_modelo_local_coincide_con_el_sketch(binario, nombre, vel, ms):
     esperado = {}
     modelo = SecuenciaLocal()
     modelo.iniciar(nombre, vel, 0)
-    previo = {"R": 0, "G": 0, "Y": 0}
+    previo = {c: 0 for c in COLORES}
     for t in range(ms + 1):                                  # el driver también ejecuta loop() en t = ms
         b = modelo.brillos(t)
-        for c, pin in (("R", 3), ("G", 5), ("Y", 6)):
+        for c, pin in PINES.items():
             if b[c] != previo[c]:
                 esperado.setdefault(pin, []).append((t, b[c]))
                 previo[c] = b[c]
-    for pin in (3, 5, 6):
+    for pin in PINES.values():
         real = cambios_pwm(s, pin)[1:]                       # sin la escritura inicial de setup()
         assert real == esperado.get(pin, []), f"{nombre} x{vel} pin {pin}"
 

@@ -1,4 +1,4 @@
-"""Guardar y cargar escenas: la configuración de los 3 LEDs, el sensor y el semáforo en un .json."""
+"""Guardar y cargar escenas: la configuración de los LEDs, el sensor y el semáforo en un .json."""
 from __future__ import annotations
 
 import json

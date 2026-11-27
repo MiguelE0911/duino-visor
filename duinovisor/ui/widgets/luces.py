@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from duinovisor.ui import tema as T
+from duinovisor.ui.constantes import ORDEN_SEMAFORO
 from duinovisor.ui.widgets.base import Lienzo, rect_redondo
 
 
@@ -88,12 +89,16 @@ class Chip(Lienzo):
 class SemaforoVirtual(Lienzo):
     """Semáforo con aspecto 3D (carcasa, visera, lente con brillo). Espeja a los LEDs reales.
 
-    Se dibuja en una geometría base de 112×262 y se amplía a `ancho`. Con `al_elegir` cada luz es un botón.
+    Tiene una luz por LED, en `orden` (de arriba abajo; por defecto el de dominio/placa.py). Se dibuja en una
+    geometría base de 112 de ancho y 76 de alto por luz (más el poste) y se amplía a `ancho`. Con `al_elegir`
+    cada luz es un botón.
     """
-    ORDEN = ("R", "Y", "G")          # de arriba abajo, como un semáforo de verdad
-    BASE_W, BASE_H = 112, 262
+    BASE_W = 112
+    ALTO_LUZ, ALTO_EXTRA = 76, 34       # 3 luces: 112×262
 
-    def __init__(self, master, ancho=112, fondo=None, al_elegir=None):
+    def __init__(self, master, ancho=112, fondo=None, al_elegir=None, orden=ORDEN_SEMAFORO):
+        self.ORDEN = tuple(orden)
+        self.BASE_H = self.ALTO_EXTRA + self.ALTO_LUZ * len(self.ORDEN)
         zoom = ancho / self.BASE_W
         super().__init__(master, ancho, self.BASE_H * zoom, fondo, zoom=zoom)
         self.al_elegir = al_elegir
@@ -104,7 +109,7 @@ class SemaforoVirtual(Lienzo):
             self.bind("<Button-1>", self._clic)
             self.bind("<Motion>", self._mover)
             self.bind("<Leave>", lambda e: self._poner_encima(None))
-        self.poner({"R": 0, "G": 0, "Y": 0})
+        self.poner({})
 
     def redimensionar(self, ancho: float) -> None:
         """Nuevo ancho lógico (el alto sigue la proporción del semáforo)."""
@@ -116,7 +121,7 @@ class SemaforoVirtual(Lienzo):
         self._dibujar()
 
     def _centro(self, i):
-        paso = (self.alto - 26 - 8) / 3
+        paso = (self.alto - self.ALTO_EXTRA) / len(self.ORDEN)
         return self.ancho / 2, 4 + paso * (i + 0.5) + 2
 
     def _luz_en(self, e):

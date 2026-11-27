@@ -18,13 +18,19 @@ def zona_termo(t: float, zona: int, t_min: float, t_max: float, histeresis: floa
     return zona
 
 
+# Qué LED se enciende en cada zona (0 fresco, 1 templado, 2 calor); los demás se apagan.
+# Es la misma tabla que ZONAS_TERMO en el sketch.
+LUZ_DE_ZONA = (
+    LedConfig(color="G", modo="ON", brillo=255),
+    LedConfig(color="Y", modo="ON", brillo=255),
+    LedConfig(color="R", modo="BLINK", brillo=255, on_ms=250, off_ms=250),
+)
+
+
 def leds_de_zona(zona: int) -> dict:
     """Configuración que el Arduino da a cada LED en una zona del semáforo térmico."""
-    apagados = {c: LedConfig(color=c, modo="OFF") for c in COLORES}
-    if zona == 0:
-        apagados["G"] = LedConfig(color="G", modo="ON", brillo=255)
-    elif zona == 1:
-        apagados["Y"] = LedConfig(color="Y", modo="ON", brillo=255)
-    elif zona == 2:
-        apagados["R"] = LedConfig(color="R", modo="BLINK", brillo=255, on_ms=250, off_ms=250)
-    return apagados
+    salida = {c: LedConfig(color=c, modo="OFF") for c in COLORES}
+    if 0 <= zona < len(LUZ_DE_ZONA):
+        cfg = LUZ_DE_ZONA[zona]
+        salida[cfg.color] = cfg
+    return salida

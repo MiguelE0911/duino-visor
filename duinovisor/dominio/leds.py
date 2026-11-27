@@ -6,8 +6,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-COLORES = ("R", "G", "Y")
-NOMBRES_COLOR = {"R": "Rojo", "G": "Verde", "Y": "Amarillo"}
+from duinovisor.dominio.placa import LEDS
+
+COLORES = tuple(led.id for led in LEDS)                    # letras de los LEDs, en el orden del sketch
+NOMBRES_COLOR = {led.id: led.nombre for led in LEDS}
 MODOS = ("OFF", "ON", "BLINK", "FADE")
 
 BRILLO_MAX = 255
@@ -18,7 +20,7 @@ MAX_MS = 60000
 
 @dataclass(frozen=True)
 class LedConfig:
-    color: str = "R"
+    color: str = COLORES[0]
     modo: str = "OFF"
     brillo: int = 255
     on_ms: int = 500

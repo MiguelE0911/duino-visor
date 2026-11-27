@@ -1,7 +1,7 @@
 /*
  * control_leds.ino  -  DuinoVisor
  *
- * 3 LEDs con PWM (pines 3, 5, 6) + sensor DHT11 (pin 2).
+ * 3 LEDs con PWM (pines 3, 5, 6, tabla `leds[]`) + sensor DHT11 (pin 2).
  * Placa: Arduino 101 (en la 101 solo 3, 5, 6 y 9 tienen PWM; en un UNO también valen).
  * Protocolo de texto por puerto serie a 9600 baudios, una orden por línea.
  * NUNCA se usa delay(): todo se planifica con millis().
@@ -35,13 +35,15 @@ struct Led {
   int16_t       pwm;          // último valor escrito (-1 = ninguno)
 };
 
-// Agregar un cuarto LED es añadir una línea aquí.
+// La lista de LEDs. Agregar uno es añadir una línea aquí (en un pin con PWM) y su entrada en
+// LEDS de duinovisor/dominio/placa.py, en el mismo orden. Las secuencias que no lo nombran lo dejan apagado.
 Led leds[] = {
   { 'R',  3, M_OFF, 0, 0, 0, 0, 0, false, -1 },
   { 'G',  5, M_OFF, 0, 0, 0, 0, 0, false, -1 },
   { 'Y',  6, M_OFF, 0, 0, 0, 0, 0, false, -1 },
 };
-const uint8_t N_LEDS = sizeof(leds) / sizeof(leds[0]);
+#define LARGO(tabla) (sizeof(tabla) / sizeof((tabla)[0]))
+const uint8_t N_LEDS = LARGO(leds);
 
 // ---- estado del sensor y del semáforo térmico ----
 uint32_t periodoDht  = 2000;
@@ -50,20 +52,25 @@ bool          termoActivo = false;
 float         termoMin = 22, termoMax = 28;
 int8_t        zona = -1;           // 0 verde, 1 amarillo, 2 rojo intermitente
 
+// Semáforo térmico: qué LED se enciende en cada zona (0 fresco, 1 templado, 2 calor); el resto se apaga.
+// Misma tabla que LUZ_DE_ZONA en duinovisor/dominio/termometro.py.
+struct DefZona { char led; Modo modo; };
+const DefZona ZONAS_TERMO[] = { {'G', M_ON}, {'Y', M_ON}, {'R', M_BLINK} };
+
 // ---- secuencias (SEQ): la app tiene la misma tabla para espejarlas ----
-// Cada paso fija el brillo de rojo, verde y amarillo durante `ms` milisegundos.
-// OJO: leds[0], leds[1] y leds[2] deben ser R, G e Y (en ese orden).
-struct PasoSeq { uint8_t r, g, y; uint16_t ms; };
-const PasoSeq SEQ_VIAL[]    = { {0, 255, 0, 5000}, {0, 0, 255, 1500}, {255, 0, 0, 5000} };
-const PasoSeq SEQ_FANT[]    = { {255, 0, 0, 150}, {0, 0, 255, 150}, {0, 255, 0, 150}, {0, 0, 255, 150} };
-const PasoSeq SEQ_ALERTA[]  = { {0, 0, 255, 500}, {0, 0, 0, 500} };
+// Cada paso fija el brillo de cada LED durante `ms` milisegundos. Las columnas de `brillo` siguen el
+// orden de leds[] (aquí R, G, Y); las que falten valen 0, así que un LED nuevo queda apagado.
+struct PasoSeq { uint8_t brillo[N_LEDS]; uint16_t ms; };
+const PasoSeq SEQ_VIAL[]    = { {{0, 255, 0}, 5000}, {{0, 0, 255}, 1500}, {{255, 0, 0}, 5000} };
+const PasoSeq SEQ_FANT[]    = { {{255, 0, 0}, 150}, {{0, 0, 255}, 150}, {{0, 255, 0}, 150}, {{0, 0, 255}, 150} };
+const PasoSeq SEQ_ALERTA[]  = { {{0, 0, 255}, 500}, {{0, 0, 0}, 500} };
 struct DefSeq { const char *nombre; const PasoSeq *pasos; uint8_t n; };
 const DefSeq SECUENCIAS[] = {
-  { "VIAL",       SEQ_VIAL,   3 },
-  { "FANTASTICO", SEQ_FANT,   4 },
-  { "ALERTA",     SEQ_ALERTA, 2 },
+  { "VIAL",       SEQ_VIAL,   LARGO(SEQ_VIAL) },
+  { "FANTASTICO", SEQ_FANT,   LARGO(SEQ_FANT) },
+  { "ALERTA",     SEQ_ALERTA, LARGO(SEQ_ALERTA) },
 };
-const uint8_t N_SECUENCIAS = sizeof(SECUENCIAS) / sizeof(SECUENCIAS[0]);
+const uint8_t N_SECUENCIAS = LARGO(SECUENCIAS);
 const DefSeq *seqDef = NULL;        // NULL = ninguna secuencia activa
 uint8_t  seqPaso = 0;
 uint16_t seqVel = 100;              // % de velocidad (25-400)
@@ -89,10 +96,14 @@ bool numero(const char *s, long &out) {
   return true;
 }
 
+Led *ledPorId(char id) {
+  for (uint8_t i = 0; i < N_LEDS; i++) if (leds[i].id == id) return &leds[i];
+  return NULL;
+}
+
 Led *buscarLed(const char *s) {
   if (s == NULL || s[0] == '\0' || s[1] != '\0') return NULL;
-  for (uint8_t i = 0; i < N_LEDS; i++) if (leds[i].id == s[0]) return &leds[i];
-  return NULL;
+  return ledPorId(s[0]);
 }
 
 const char *nombreModo(Modo m) {
@@ -121,21 +132,16 @@ void cancelarAutomatismos() {
 // ======================================================================
 // Semáforo térmico: el Arduino decide, así funciona aunque la app se cierre
 // ======================================================================
-void ponerFijo(Led &l, bool encendido) {
-  l.modo = encendido ? M_ON : M_OFF;
-  l.brillo = 255;
-}
-
 void aplicarZona(int8_t z, uint32_t ahora) {
   apagarTodos();
-  switch (z) {
-    case 0: ponerFijo(leds[1], true); break;                 // verde
-    case 1: ponerFijo(leds[2], true); break;                 // amarillo
-    case 2:                                                  // rojo intermitente
-      leds[0].modo = M_BLINK; leds[0].brillo = 255;
-      leds[0].onMs = 250; leds[0].offMs = 250;
-      leds[0].fase = true; leds[0].ultimoCambio = ahora;
-      break;
+  if (z < 0 || z >= (int8_t)LARGO(ZONAS_TERMO)) return;
+  Led *l = ledPorId(ZONAS_TERMO[z].led);
+  if (l == NULL) return;
+  l->modo = ZONAS_TERMO[z].modo;
+  l->brillo = 255;
+  if (l->modo == M_BLINK) {                                  // intermitente: 250 ms y 250 ms
+    l->onMs = 250; l->offMs = 250;
+    l->fase = true; l->ultimoCambio = ahora;
   }
 }
 
@@ -169,9 +175,7 @@ uint32_t durPaso() {
 
 void aplicarPasoSeq() {
   const PasoSeq &p = seqDef->pasos[seqPaso];
-  fijarLed(leds[0], p.r);
-  fijarLed(leds[1], p.g);
-  fijarLed(leds[2], p.y);
+  for (uint8_t i = 0; i < N_LEDS; i++) fijarLed(leds[i], p.brillo[i]);
 }
 
 void actualizarSecuencia(uint32_t ahora) {
@@ -210,7 +214,12 @@ void ordenSeq(char **tok, uint8_t n, uint32_t ahora) {
   } else {
     const DefSeq *def = NULL;
     for (uint8_t i = 0; i < N_SECUENCIAS; i++) if (strcmp(tok[1], SECUENCIAS[i].nombre) == 0) def = &SECUENCIAS[i];
-    if (def == NULL) { Serial.println("ERR secuencia VIAL FANTASTICO ALERTA"); return; }
+    if (def == NULL) {                                       // ERR secuencia VIAL FANTASTICO ALERTA
+      Serial.print("ERR secuencia");
+      for (uint8_t i = 0; i < N_SECUENCIAS; i++) { Serial.print(' '); Serial.print(SECUENCIAS[i].nombre); }
+      Serial.println();
+      return;
+    }
     long vel = 100;
     if (n == 3 && (!numero(tok[2], vel) || vel < 25 || vel > 400)) { Serial.println("ERR velocidad 25-400"); return; }
     termoActivo = false; zona = -1;
@@ -240,7 +249,12 @@ void procesarComando(char *texto) {
   } else if (strcmp(tok[0], "LED") == 0) {
     if (n < 3)                      { Serial.println("ERR faltan argumentos"); return; }
     Led *l = buscarLed(tok[1]);
-    if (l == NULL)                  { Serial.println("ERR led R G Y"); return; }
+    if (l == NULL) {                                         // ERR led R G Y
+      Serial.print("ERR led");
+      for (uint8_t i = 0; i < N_LEDS; i++) { Serial.print(' '); Serial.print(leds[i].id); }
+      Serial.println();
+      return;
+    }
 
     if (strcmp(tok[2], "OFF") == 0) {
       if (n != 3)                   { Serial.println("ERR argumentos"); return; }
