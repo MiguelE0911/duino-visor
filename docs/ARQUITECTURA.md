@@ -18,9 +18,20 @@ ui  ──►  hardware  ──►  dominio
 `tests/test_arquitectura.py` comprueba estas reglas leyendo los `import` de cada módulo. Si falla, la
 dependencia va al revés: mueve el código a la capa correcta en lugar de añadir una excepción.
 
+## Catálogo de componentes
+
+`dominio/placa.py` es la **única lista** de lo que hay conectado: `LEDS` (letra, nombre, pin, color real y
+posición en el semáforo) y el sensor `DHT`. Nada más en Python escribe las letras R/G/Y por su cuenta:
+`leds.COLORES`, los nombres de la ventana, el orden del semáforo, los colores del tema, los pines de la
+protoboard, el simulador y las escenas se derivan de ella. Las tablas de datos que nombran LEDs concretos
+(los pasos de `secuencias.SECUENCIAS` y `termometro.LUZ_DE_ZONA`) usan su letra, y lo que no nombran queda
+apagado.
+
 El `firmware/` (sketch) es la otra mitad del contrato: `dominio/protocolo.py`, `secuencias.py`,
-`termometro.py`, `leds.brillo_en` y `placa.py` deben coincidir con él. `tests/firmware/` lo compila con g++
-y compara su salida con el dominio milisegundo a milisegundo.
+`termometro.py`, `leds.brillo_en` y `placa.py` deben coincidir con él (`leds[]`, `PIN_DHT`, `ZONAS_TERMO` y las
+tablas `SEQ_*`, cuyas columnas siguen el orden de `leds[]`). `tests/firmware/test_contrato.py` compara esas
+tablas leyendo el `.ino`, sin compilar; `tests/firmware/test_sketch.py` lo compila con g++ y compara su salida
+con el dominio milisegundo a milisegundo.
 
 ## La ventana: `App` y sus mixins
 
@@ -59,10 +70,11 @@ la decisión no necesita la ventana para nada, en `dominio/`.
 
 | Quiero añadir… | Pasos |
 | --- | --- |
-| Una animación nueva | `SECUENCIAS` y `NOMBRES_SEQ` en `dominio/secuencias.py` y la misma tabla en el sketch. La ventana la muestra sola |
+| Un LED nuevo | Una entrada en `LEDS` de `dominio/placa.py` y la misma línea en `leds[]` del sketch (pin con PWM). El resto se adapta solo; ver «Añadir un LED» en el README |
+| Una animación nueva | `SECUENCIAS` y `NOMBRES_SEQ` en `dominio/secuencias.py` (pasos `(ms, {LED: brillo})`) y la misma tabla en el sketch (una columna por LED, en el orden de `leds[]`). La ventana y el simulador la muestran solos |
 | Un modo de LED nuevo | `MODOS`, `errores` y `brillo_en` en `dominio/leds.py`; `comando_led` en `dominio/protocolo.py`; el sketch; el simulador; la etiqueta en `ui/constantes.MODOS` y sus controles en `vistas/luces.py` |
 | Una orden nueva del protocolo | Función `comando_*` / `Paso` en `dominio/protocolo.py` (y `confirmar` si cambia el estado), el sketch y el simulador |
-| Un sensor nuevo | Su lectura en `dominio/protocolo.interpretar`, su pin en `dominio/placa.py`, el simulador, y una vista o tarjeta en `ui/vistas/` |
+| Un sensor nuevo | Su lectura en `dominio/protocolo.interpretar`, su `Sensor` en `SENSORES` de `dominio/placa.py`, el simulador, y una vista o tarjeta en `ui/vistas/` |
 | Una pestaña o panel nuevo | Un mixin en `ui/vistas/` (y otro en `ui/controladores/` si tiene lógica), añadido a la lista de bases de `App` |
 | Un widget nuevo | En el módulo de su familia dentro de `ui/widgets/` (o uno nuevo), heredando de `base.Lienzo` |
 | Un formato de archivo nuevo | Un módulo en `almacenamiento/` y su acción en `ui/controladores/archivos.py` |
