@@ -117,6 +117,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMix
         self.v_sel = tk.StringVar(value=ORDEN_SEMAFORO[0])        # LED que se edita
         self.v_vista = tk.StringVar(value="semaforo")              # pestaña: semaforo (Luces), clima o config
         self.v_modo_luces = tk.StringVar(value="semaforo")         # semaforo o protoboard
+        self.v_ayuda_luces = tk.StringVar(value="Haz clic en una luz para elegir qué hace.")
         self.v_detalles = tk.BooleanVar(value=False)
         self.v_tema = tk.StringVar(value=T.tema_actual)
         self.v_acento = tk.StringVar(value=T.acento_actual)
@@ -273,6 +274,8 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMix
             self.protoboard.poner(brillos)
             for c, ch in self.chips.items():
                 ch.configurar(brillo=int(brillos[c]))
+            if self.vista_actual == "semaforo" and self.v_modo_luces.get() == "protoboard":
+                self.ficha_proto.poner(self._ficha_actual(brillos))
             texto = self._texto_semaforo()
             if texto != self._texto_sem:
                 self._texto_sem = texto

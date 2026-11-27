@@ -420,3 +420,23 @@ def test_vista_de_clima_con_termometro_y_gota_se_recuerda(gui):
     assert gui.termometro._t == 24.5 and gui.gota._h == 61.0
     gui.v_tema.set("oscuro")                                             # tras reconstruir sigue igual
     assert gui.v_vista_clima.get() == "termometro"
+
+
+# ------------------------------------------------------------------ protoboard: fichas
+def test_ficha_del_led_elegido_y_del_sensor(gui):
+    from duinovisor.dominio.placa import DHT, LEDS
+    led = LEDS[-1]
+    gui.v_sel.set(led.id)
+    gui.paneles[led.id].v_modo.set("ON")
+    enviar_y_esperar(gui, gui.aplicar)
+    filas = dict(gui._ficha_actual().filas)
+    assert f"Pin {led.pin}" in filas["Conectado a"] and filas["Ahora"] == "Encendida al 100 %"
+    gui.protoboard._clic((f"sel_{DHT.id}",))                            # clic en el sensor
+    assert gui.protoboard.componente == DHT.id
+    ficha = gui._ficha_actual()
+    assert DHT.nombre in ficha.titulo and f"pin {DHT.pin}" in dict(ficha.filas)["Conectado a"]
+    gui.protoboard._clic((f"sel_{LEDS[0].id}",))                        # clic en un LED: vuelve a su ficha
+    assert gui.protoboard.componente is None and gui.v_sel.get() == LEDS[0].id
+    gui.v_seq.set("VIAL")
+    enviar_y_esperar(gui, gui.alternar_secuencia)
+    assert "animación" in dict(gui._ficha_actual().filas)["Qué hace"]

@@ -12,7 +12,7 @@ from duinovisor.ui.widgets.botones import BotonPildora, Segmentado
 from duinovisor.ui.widgets.contenedores import Aviso, Desplazable, Tarjeta
 from duinovisor.ui.widgets.controles import Deslizador
 from duinovisor.ui.widgets.luces import Chip, SemaforoVirtual
-from duinovisor.ui.widgets.protoboard import Protoboard
+from duinovisor.ui.widgets.protoboard import FichaComponente, Protoboard
 
 
 class LucesMixin:
@@ -43,10 +43,11 @@ class LucesMixin:
         self.semaforo.pack(expand=True)
         self.f_semaforo.bind("<Configure>", self._ajustar_semaforo)
         self.protoboard = Protoboard(self.area_luces, 600, 260, fuente=f, al_elegir=self.v_sel.set)
+        self.ficha_proto = FichaComponente(self.area_luces, f)
 
         etiqueta(c, "", f, T.TAM_CUERPO, T.TEXTO, textvariable=self.v_sem, negrita=True).grid(
             row=1, column=0, pady=(self._px(8), 0))
-        etiqueta(c, "Haz clic en una luz para elegir qué hace.", f, T.TAM_PEQ, T.TEXTO_3).grid(row=2, column=0)
+        etiqueta(c, "", f, T.TAM_PEQ, T.TEXTO_3, textvariable=self.v_ayuda_luces).grid(row=2, column=0)
         fila_chips = tk.Frame(c, bg=T.SUPERFICIE)
         fila_chips.grid(row=3, column=0, pady=(self._px(12), 0))
         self.chips = {}
@@ -199,6 +200,7 @@ class LucesMixin:
         self._construir_editor()
         self.semaforo.seleccionar(col)
         self.protoboard.seleccionar(col)
+        self.protoboard.ver_componente(None)                 # la ficha pasa a ser la del LED elegido
         for c, ch in self.chips.items():
             ch.configurar(seleccionado=(c == col))
 
@@ -208,9 +210,14 @@ class LucesMixin:
         if self.v_modo_luces.get() == "protoboard":
             self.f_semaforo.grid_remove()
             self.protoboard.grid(row=0, column=0, sticky="nsew")
+            self.ficha_proto.grid(row=1, column=0, sticky="ew", pady=(self._px(10), 0))
+            self.v_ayuda_luces.set("Clic en una luz o en el sensor para ver su ficha · Rueda del ratón: acercar · "
+                                   "Arrastra: moverte · Doble clic: ver todo")
         else:
             self.protoboard.grid_remove()
+            self.ficha_proto.grid_remove()
             self.f_semaforo.grid(row=0, column=0, sticky="nsew")
+            self.v_ayuda_luces.set("Haz clic en una luz para elegir qué hace.")
 
     def _actualizar_luces(self, bloqueado: bool):
         if not self._construido:
