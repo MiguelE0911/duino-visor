@@ -135,8 +135,8 @@ class ArduinoSimulado:
             return self._orden_seq(tok, ahora)
         if tok[0] == "STATUS":
             self._sincronizar_seq(ahora)
-            filas = [f"STATE {c} {l['modo']} {l['brillo']} {l['on']} {l['off']} {l['periodo']}"
-                     for c, l in self.leds.items()]
+            filas = [f"STATE {c} {led['modo']} {led['brillo']} {led['on']} {led['off']} {led['periodo']}"
+                     for c, led in self.leds.items()]
             if self.seq.activa:
                 filas.append(f"STATE SEQ {self.seq.nombre} {self.seq.vel} {'PAUSA' if self.seq.pausada else 'RUN'}")
             else:

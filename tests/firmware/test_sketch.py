@@ -30,21 +30,21 @@ def correr(binario, *lineas):
 
 
 def sin_datos(lineas):
-    return [l for l in lineas if not l.startswith("DATA")]
+    return [x for x in lineas if not x.startswith("DATA")]
 
 
 def respuestas(salida):
-    return [l[2:] for l in salida if l.startswith("< ")]
+    return [x[2:] for x in salida if x.startswith("< ")]
 
 
 def cambios_pwm(salida, pin):
     """[(ms, valor)] de cada escritura PWM de un pin."""
-    return [(int(m.group(1)), int(m.group(3))) for l in salida
-            if (m := re.match(r"@(\d+) P(\d+)=(\d+)", l)) and int(m.group(2)) == pin]
+    return [(int(m.group(1)), int(m.group(3))) for x in salida
+            if (m := re.match(r"@(\d+) P(\d+)=(\d+)", x)) and int(m.group(2)) == pin]
 
 
 def ultimo_pwm(salida):
-    ln = [l for l in salida if l.startswith("PWM")][-1]
+    ln = [x for x in salida if x.startswith("PWM")][-1]
     return {int(k): int(v) for k, v in re.findall(r"(\d+)=(\d+)", ln)}
 
 
