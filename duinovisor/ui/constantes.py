@@ -17,5 +17,6 @@ OPCIONES_RITMO = [("lento", "Lento"), ("normal", "Normal"), ("rapido", "Rápido"
 # «Leer el sensor cada»: (ms, texto)
 PERIODOS_SENSOR = [("1000", "1 s"), ("2000", "2 s"), ("5000", "5 s"), ("10000", "10 s"),
                    ("30000", "30 s"), ("60000", "1 min")]
+VISTAS_CLIMA = [("medidor", "Medidor y barras"), ("termometro", "Termómetro y gota")]
 ZONAS = ["hace fresco (verde)", "templado (amarillo)", "hace calor (rojo)"]
 ANCHO_LATERAL = 340

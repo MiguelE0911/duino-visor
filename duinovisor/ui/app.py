@@ -30,7 +30,7 @@ from duinovisor.dominio.secuencias import SecuenciaLocal
 from duinovisor.hardware.enlace import Enlace
 from duinovisor.hardware.simulador import ArduinoSimulado
 from duinovisor.ui import tema as T
-from duinovisor.ui.constantes import NOMBRE_LUZ, ORDEN_SEMAFORO, POLL_MS
+from duinovisor.ui.constantes import NOMBRE_LUZ, ORDEN_SEMAFORO, POLL_MS, VISTAS_CLIMA
 from duinovisor.ui.controladores.archivos import ArchivosMixin
 from duinovisor.ui.controladores.conexion import ConexionMixin
 from duinovisor.ui.controladores.envio import EnvioMixin
@@ -139,12 +139,15 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMix
         self.v_tmin, self.v_tmax = tk.StringVar(value="22"), tk.StringVar(value="28")
         self.v_alarmas = tk.BooleanVar(value=False)
         self.v_amax_t, self.v_amax_h = tk.StringVar(value="35"), tk.StringVar(value="80")
+        vista_clima = self.prefs["vista_clima"]
+        self.v_vista_clima = tk.StringVar(value=vista_clima if vista_clima in dict(VISTAS_CLIMA) else "medidor")
         self._crear_variables_config()
 
         self.v_sel.trace_add("write", lambda *_: self._al_elegir_led())
         self.v_vista.trace_add("write", lambda *_: self.mostrar_vista(self.v_vista.get()))
         self.v_modo_luces.trace_add("write", lambda *_: self._mostrar_modo_luces())
         self.v_detalles.trace_add("write", lambda *_: self._mostrar_detalles())
+        self.v_vista_clima.trace_add("write", lambda *_: self._cambio_vista_clima())
         for v in (self.v_tema, self.v_acento):
             v.trace_add("write", lambda *_: self._cambio_apariencia())
         for v in (self.v_seq, self.v_vel):
@@ -204,6 +207,7 @@ class App(CabeceraMixin, LucesMixin, ClimaMixin, DetallesMixin, ConfiguracionMix
         self._construido = True
         self.mostrar_vista(self.v_vista.get())
         self._mostrar_modo_luces()
+        self._mostrar_vista_clima()
         self._mostrar_detalles()
         self._al_elegir_led()
         self._repintar_log()

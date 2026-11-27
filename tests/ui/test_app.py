@@ -408,3 +408,15 @@ def test_acerca_de_se_abre_una_sola_vez(gui):
     assert gui._ventana_acerca is ventana
     gui._cerrar_acerca()
     assert gui._ventana_acerca is None
+
+
+def test_vista_de_clima_con_termometro_y_gota_se_recuerda(gui):
+    from duinovisor.almacenamiento import preferencias
+    assert gui.v_vista_clima.get() == "medidor"
+    gui.v_vista_clima.set("termometro")
+    assert preferencias.cargar()["vista_clima"] == "termometro"
+    gui._ultima = (24.5, 61.0)
+    gui._pintar_clima()
+    assert gui.termometro._t == 24.5 and gui.gota._h == 61.0
+    gui.v_tema.set("oscuro")                                             # tras reconstruir sigue igual
+    assert gui.v_vista_clima.get() == "termometro"
