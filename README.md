@@ -87,8 +87,8 @@ por eso los LEDs van en 3, 5 y 6. Montaje comprobado con la placa real.
 Los LEDs salen de una sola lista, `LEDS` en `duinovisor/dominio/placa.py`. Para sumar uno (por ejemplo azul en
 el pin 9, el último con PWM libre en el 101):
 
-1. Una línea en `LEDS`: `Led("B", "Azul", "Luz azul", pin=9, color="#3b82f6", fila=3)`. `fila` es su
-   posición de arriba abajo en el semáforo.
+1. Una línea en `LEDS`: `Led("B", "Azul", "Luz azul", pin=9, color="#3b82f6", fila=3, columna=3)`. `fila` es
+   su posición de arriba abajo en el semáforo y `columna`, de izquierda a derecha en la vista protoboard.
 2. La misma línea en la tabla `leds[]` del sketch, en el mismo orden: `{ 'B',  9, M_OFF, 0, 0, 0, 0, 0, false, -1 },`
 3. Montarlo como los otros: pin → 220 Ω → ánodo; cátodo → GND.
 

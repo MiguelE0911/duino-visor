@@ -54,8 +54,9 @@ def color_cable(id_led: str) -> str:
 
 
 def orden_leds() -> list[str]:
-    """LEDs de izquierda a derecha: por pin descendente, así los cables no se cruzan."""
-    return sorted(COLORES, key=lambda c: -PINES[c])
+    """LEDs de izquierda a derecha como en el montaje real (`columna` del catálogo); los que no la tienen, al
+    final y por pin descendente."""
+    return [led.id for led in sorted(LEDS, key=lambda led: (led.columna, -led.pin))]
 
 
 class Protoboard(tk.Canvas):

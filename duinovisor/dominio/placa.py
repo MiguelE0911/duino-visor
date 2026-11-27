@@ -22,6 +22,7 @@ class Led:
     pin: int         # pin con PWM
     color: str       # color del LED real (#rrggbb), para dibujarlo igual
     fila: int        # posición de arriba abajo en el semáforo y en los chips
+    columna: int = 99  # posición de izquierda a derecha en la protoboard (como en el montaje real)
 
 
 @dataclass(frozen=True)
@@ -36,9 +37,9 @@ class Sensor:
 
 # En el mismo orden que `leds[]` del sketch (es el orden de STATUS y de las columnas de sus secuencias).
 LEDS: tuple[Led, ...] = (
-    Led("R", "Rojo", "Luz roja", pin=3, color="#e5533d", fila=0),
-    Led("G", "Verde", "Luz verde", pin=5, color="#4fbf5f", fila=2),
-    Led("Y", "Amarillo", "Luz amarilla", pin=6, color="#f2c14e", fila=1),
+    Led("R", "Rojo", "Luz roja", pin=3, color="#e5533d", fila=0, columna=2),
+    Led("G", "Verde", "Luz verde", pin=5, color="#4fbf5f", fila=2, columna=0),
+    Led("Y", "Amarillo", "Luz amarilla", pin=6, color="#f2c14e", fila=1, columna=1),
 )
 DHT = Sensor("DHT", "DHT11", pin=2,
              descripcion="Un sensor que mide la temperatura (de 0 a 50 °C, con unos 2 °C de margen) y la "
