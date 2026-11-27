@@ -34,6 +34,25 @@ def curva_suave(puntos: list[Punto], pasos: int = 10) -> list[Punto]:
     return salida
 
 
+def curva_cerrada(puntos: list[Punto], pasos: int = 6) -> list[Punto]:
+    """Polígono cerrado suavizado como lo hace Tk (`smooth=True`): un spline cuadrático por cada vértice, entre
+    los puntos medios de sus dos lados."""
+    n = len(puntos)
+    if n < 3:
+        return list(puntos)
+    salida = []
+    for i in range(n):
+        a, b, c = puntos[i - 1], puntos[i], puntos[(i + 1) % n]
+        inicio = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+        fin = ((b[0] + c[0]) / 2, (b[1] + c[1]) / 2)
+        for k in range(pasos):
+            t = k / pasos
+            u = 1 - t
+            salida.append((u * u * inicio[0] + 2 * u * t * b[0] + t * t * fin[0],
+                           u * u * inicio[1] + 2 * u * t * b[1] + t * t * fin[1]))
+    return salida
+
+
 def longitud(polilinea: list[Punto]) -> float:
     return sum(math.dist(a, b) for a, b in zip(polilinea, polilinea[1:]))
 
@@ -86,6 +105,24 @@ def limitar_origen(origen, vista, z: float, escena) -> Punto:
     for o, tam, a, b in ((origen[0], escena[0] * z, vista[0], vista[2]), (origen[1], escena[1] * z, vista[1], vista[3])):
         res.append(a + (b - a - tam) / 2 if tam <= b - a else min(a, max(b - tam, o)))
     return res[0], res[1]
+
+
+def recorte_previa(tam_img, desp, z0: float, z1: float, origen, pantalla):
+    """Para una vista previa rápida al cambiar el zoom: qué trozo de la imagen pintada con zoom z0 se ve ahora.
+
+    `desp` es dónde estaba el origen del montaje dentro de esa imagen; `origen` y `pantalla` (ancho, alto), los
+    de ahora. Devuelve (caja de recorte en la imagen, (x, y) en pantalla, (ancho, alto) en pantalla) o None si
+    no se ve nada.
+    """
+    f = z1 / z0
+    u0, v0 = desp[0] - origen[0] / f, desp[1] - origen[1] / f
+    u1, v1 = desp[0] + (pantalla[0] - origen[0]) / f, desp[1] + (pantalla[1] - origen[1]) / f
+    a, b = max(0, math.floor(u0)), max(0, math.floor(v0))
+    c, d = min(tam_img[0], math.ceil(u1)), min(tam_img[1], math.ceil(v1))
+    if c <= a or d <= b:
+        return None
+    x, y = origen[0] + (a - desp[0]) * f, origen[1] + (b - desp[1]) * f
+    return (a, b, c, d), (x, y), (max(1, round((c - a) * f)), max(1, round((d - b) * f)))
 
 
 def suavizar(t: float) -> float:

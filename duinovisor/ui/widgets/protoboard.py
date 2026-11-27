@@ -9,6 +9,12 @@ ajustar y ficha), doble clic en un hueco para verlo todo y teclado (+, −, 0, f
 El dibujo de cada pieza está en `dibujo_placa`, la ficha en `ficha` y las cuentas en `geometria`. Lo que se
 mueve cada fotograma (anillo que respira, corriente por el cable, pulso de datos) lo actualiza `animar` sin
 redibujar la escena.
+
+Rendimiento: Tk repinta de una vez el rectángulo que abarca todo lo que cambió; con ~2000 elementos eso son
+~50 ms por fotograma. Con Pillow (`raster`), lo que no cambia (mesa, placa, protoboard, cables, resistencias) es
+una sola imagen y los LEDs son imágenes con su resplandor: repintar todo cuesta ~5 ms y arrastrar solo mueve la
+imagen. Sin Pillow se dibuja todo con elementos del lienzo, como antes. El componente bajo el ratón se busca por
+geometría (`_zonas`), igual en los dos casos.
 """
 from __future__ import annotations
 
@@ -20,6 +26,7 @@ from duinovisor.dominio.placa import DHT, LEDS, PIN_DHT, PINES, RESISTENCIA_LED
 from duinovisor.ui import tema as T
 from duinovisor.ui.constantes import NOMBRE_LUZ
 from duinovisor.ui.widgets import dibujo_placa as D
+from duinovisor.ui.widgets import raster
 from duinovisor.ui.widgets.base import rect_redondo
 from duinovisor.ui.widgets.ficha import ANCHO_MAX, MARGEN, dibujar_ficha
 from duinovisor.ui.widgets.geometria import (
@@ -27,6 +34,7 @@ from duinovisor.ui.widgets.geometria import (
     limitar_origen,
     origen_centrado,
     punto_en,
+    recorte_previa,
     suavizar,
     zoom_en_punto,
 )
@@ -46,6 +54,9 @@ FOTOGRAMAS_FICHA = 10
 PERIODO_ANILLO_MS = 1600
 PERIODO_CORRIENTE_MS = 1500
 DURACION_PULSO_MS = 750
+NIVELES_LED = 16               # imágenes distintas de cada LED según su brillo
+MS_NITIDO = 170                # tras la última vuelta de la rueda, se repinta nítido
+MAX_PIXELES_FIJOS = 3_500_000  # hasta aquí se pinta el montaje entero (arrastrar no obliga a repintarlo)
 
 
 def color_cable(id_led: str) -> str:
@@ -64,8 +75,21 @@ class Protoboard(tk.Canvas):
         self.S = T.ESCALA
         self.fondo = fondo or T.SUPERFICIE
         self.mesa = T.SUPERFICIE_2
-        super().__init__(master, width=round(ancho * self.S), height=round(alto * self.S), bg=self.fondo,
-                         highlightthickness=0, bd=0, takefocus=1)
+        self._raster = raster.disponible()
+        super().__init__(master, width=round(ancho * self.S), height=round(alto * self.S),
+                         bg=self.mesa if self._raster else self.fondo, highlightthickness=0, bd=0, takefocus=1)
+        # caché de imágenes (Pillow): mesa, montaje fijo, LEDs por brillo y resplandores de los cables
+        self._img_mesa = self._img_fija = None
+        self._clave_mesa = self._clave_fija = None
+        self._sprites, self._nivel_led, self._img_rutas = {}, {}, {}
+        self._cables, self._zonas = {}, []
+        self._fija_parcial = False
+        self._id_redibujo = None
+        self._pil_fija = self._img_previa = None       # última imagen fija en Pillow (para la vista previa)
+        self._desp_fija, self._z_fija, self._z_capas = (0, 0), 1.0, None
+        self._rapido = False                           # el próximo dibujo puede usar la vista previa
+        self._en_previa = False                        # lo que se ve ahora es una vista previa
+        self._wh_marco = None                          # tamaño con el que se dibujó el marco (y la ficha)
         self._fuente, self.al_elegir, self.al_accion = fuente, al_elegir, al_accion
         self._brillos = {c: 0 for c in COLORES}
         self.seleccionado = None
@@ -130,7 +154,17 @@ class Protoboard(tk.Canvas):
         """Vuelve a ver todo el montaje."""
         self._cancelar_zoom()
         self._zoom, self._origen = 1.0, None
-        self._redibujar()
+        self._redibujar_escena()
+
+    def _programar_redibujo(self, ms: int = 0):
+        """Redibuja una sola vez aunque lleguen muchas peticiones seguidas (rueda, flechas)."""
+        if self._id_redibujo is not None:
+            self.after_cancel(self._id_redibujo)
+        self._id_redibujo = self.after(ms, self._redibujo_programado)
+
+    def _redibujo_programado(self):
+        self._id_redibujo = None
+        self._redibujar_escena()
 
     def poner_ficha(self, ficha) -> None:
         """Contenido de la ficha. Solo se redibuja si cambió."""
@@ -232,10 +266,15 @@ class Protoboard(tk.Canvas):
     def _redibujar(self):
         self._dibujar(*self._wh)
 
-    def _dibujar(self, w, h):
+    def _redibujar_escena(self):
+        """Solo el montaje (zoom y desplazamiento): la ficha, la barra y el marco se quedan como están."""
+        self._dibujar(*self._wh, conservar=True)
+
+    def _dibujar(self, w, h, conservar=False):
+        todo = not conservar or not self._raster or self._wh_marco != (w, h)   # sin Pillow, siempre todo
         self._wh = (w, h)
         try:
-            self.delete("all")
+            self.delete(*(("all",) if todo else ("fondo", "escena", "anim", "ayuda")))
         except tk.TclError:
             return
         if not self._listo():
@@ -244,16 +283,27 @@ class Protoboard(tk.Canvas):
         z = encaje(vista, ESCENA) * self._zoom
         origen = limitar_origen(self._origen or origen_centrado(vista, z, ESCENA), vista, z, ESCENA)
         self._z, self._origen = z, (origen if self._zoom > 1.0001 else None)
-        p = D.Pincel(self, z, self._fuente, self.S, self.mesa)
-        self._escena(p)
-        self.scale("all", 0, 0, z, z)
-        self.move("all", *origen)
-        self.addtag_all("escena")
-        self._mesa(w, h)
+        if self._raster:
+            self._dibujar_con_imagenes(w, h, z, origen)
+        else:
+            p = D.Pincel(self, z, self._fuente, self.S, self.mesa)
+            self._escena(p, p)
+            self.scale("all", 0, 0, z, z)
+            self.move("all", *origen)
+            self.addtag_all("escena")
+            self._mesa(w, h)
+        if todo:
+            self._marco(w, h)
+            self._wh_marco = (w, h)
+        else:
+            self.tag_lower("escena", "marco")              # debajo del marco, la barra y la ficha que se quedan
+            self.tag_lower("fondo")
         for c in COLORES:
-            self._pintar_led(c)
+            self._pintar_led(c, forzar=True)
         self._marcar_seleccion()
         self._barra_herramientas()
+        if not todo:
+            return
         alto = self._alto_ficha
         self._dibujar_ficha()
         if self._entrada_pendiente and self.ficha_abierta and self._ficha is not None:
@@ -261,12 +311,128 @@ class Protoboard(tk.Canvas):
         elif self.ficha_abierta and self._anim_ficha is None and abs(self._alto_ficha - alto) > 2:
             self.after_idle(self._redibujar)        # la primera vez no se sabía cuánto ocupa la ficha
 
-    def _mesa(self, w, h):
-        """Fondo de mesa de trabajo con una rejilla de puntos, fijo aunque se mueva el montaje.
+    def _dibujar_con_imagenes(self, w, h, z, origen):
+        """Mesa y montaje fijo como imágenes; LEDs como imágenes por brillo; el resto, elementos del lienzo."""
+        s = self.S
+        # mesa (solo cambia con el tamaño o el tema)
+        clave = (w, h, T.tema_actual)
+        if clave != self._clave_mesa:
+            self._img_mesa = raster.foto(raster.mesa(w, h, self.mesa, T.mezclar(self.mesa, T.TEXTO_3, 0.28),
+                                                     22 * s, max(1, 1.1 * s)))
+            self._clave_mesa = clave
+        self.create_image(0, 0, anchor="nw", image=self._img_mesa, tags=("fondo",))
+        # montaje fijo: entero si cabe en memoria; si no, la parte visible con margen
+        pad = 24 * z
+        ancho_esc, alto_esc = ESCENA[0] * z + 2 * pad, ESCENA[1] * z + 2 * pad
+        if ancho_esc * alto_esc <= MAX_PIXELES_FIJOS:
+            x0, y0, x1, y1 = origen[0] - pad, origen[1] - pad, origen[0] - pad + ancho_esc, origen[1] - pad + alto_esc
+            self._fija_parcial = False
+            clave = (round(z, 5), T.tema_actual, T.acento_actual, "entera")
+        else:
+            mx, my = 0.4 * w, 0.4 * h
+            x0, y0 = max(origen[0] - pad, -mx), max(origen[1] - pad, -my)
+            x1 = min(origen[0] - pad + ancho_esc, w + mx)
+            y1 = min(origen[1] - pad + alto_esc, h + my)
+            self._fija_parcial = True
+            clave = (round(z, 5), T.tema_actual, T.acento_actual, round(origen[0] - x0), round(origen[1] - y0),
+                     round(x1 - x0), round(y1 - y0))
+        previa = None
+        if clave != self._clave_fija and self._rapido and self._pil_fija is not None:
+            previa = self._vista_previa(w, h, z, origen)       # mientras gira la rueda: la anterior, escalada
+        self._en_previa = previa is not None
+        if previa is not None:
+            self._escena(None, None)
+            self._img_previa, x0, y0 = previa
+            imagen = self._img_previa
+            self._programar_redibujo(MS_NITIDO)                # y cuando pare, nítida
+        elif clave != self._clave_fija:
+            lienzo = raster.LienzoImagen(x1 - x0, y1 - y0, z, (origen[0] - x0, origen[1] - y0), self.S)
+            pf = D.Pincel(lienzo, z, self._fuente, self.S, self.mesa)
+            self._escena(pf, None)
+            self._pil_fija = lienzo.imagen()
+            self._desp_fija, self._z_fija = (origen[0] - x0, origen[1] - y0), z
+            self._img_fija = imagen = raster.foto(self._pil_fija)
+            self._clave_fija = clave
+        else:
+            self._escena(None, None)                       # solo recalcula zonas, rutas y cables
+            imagen = self._img_fija
+        self._rapido = False
+        if round(z, 5) != self._z_capas:                   # LEDs y resplandores dependen del zoom
+            self._sprites, self._img_rutas, self._z_capas = {}, {}, round(z, 5)
+        self.create_image(x0, y0, anchor="nw", image=imagen, tags=("escena", "fija"))
+        # lo que cambia: marcas de los pines, halos y anillos (en coordenadas virtuales, luego escaladas)
+        pd = D.Pincel(self, z, self._fuente, self.S, self.mesa)
+        self._marcas_vivas(pd)
+        self.scale("dyn", 0, 0, z, z)
+        self.move("dyn", *origen)
+        self.addtag_withtag("escena", "dyn")
+        # resplandores de cables ya hechos (guardados respecto al origen: valen aunque se haya desplazado)
+        for clave, (img, dx, dy) in self._img_rutas.items():
+            self.create_image(origen[0] + dx, origen[1] + dy, anchor="nw", image=img, state="hidden",
+                              tags=("escena", "ruta_img", f"ruta_{clave}"))
+        # LEDs: una imagen cada uno (se cambia por la de su brillo en _pintar_led)
+        self._nivel_led = {}
+        for c, (cx, cy) in self._centros.items():
+            self.create_image(origen[0] + cx * z, origen[1] + cy * z, tags=("escena", "sprite", f"spr_{c}"))
+        self.tag_lower("fija")
+        self.tag_lower("fondo")
+        if self._img_rutas:
+            self.tag_raise("ruta_img", "fija")
+        self.tag_raise("sprite", "ruta_img" if self._img_rutas else "fija")
+        self.tag_raise("dyn")
 
-        Tk no recorta: con zoom, el montaje se saldría por las esquinas redondeadas. Por eso encima del montaje
-        van unas máscaras del color de la tarjeta en las cuatro esquinas y el borde (etiqueta `marco`).
-        """
+    def _vista_previa(self, w, h, z, origen):
+        """La imagen fija anterior recortada y escalada al zoom nuevo (rápido; se ve algo borrosa)."""
+        datos = recorte_previa(self._pil_fija.size, self._desp_fija, self._z_fija, z, origen, (w, h))
+        if datos is None:
+            return None
+        caja, (x, y), tam = datos
+        img = self._pil_fija.crop(caja).resize(tam, raster.Image.BILINEAR)
+        return raster.foto(img), x, y
+
+    def _marcas_vivas(self, pd):
+        """Anillos de los pines, halos y anillos de selección: elementos del lienzo con la etiqueta `dyn`."""
+        r = D.R_LED
+        for c, (cx, cy) in self._centros.items():
+            D.marcas(pd, c, cx, cy, r)
+        xv, xg = D.col_x(COL_DHT), D.col_x(COL_DHT + 2)
+        D.dht_marcas(pd, DHT.id, xv, xg)
+        for clave, (x, y) in self._pines.items():
+            self._anillo_pin(pd, clave, x, y)
+        for clave in (*COLORES, DHT.id):
+            for prefijo in ("halo_", "anillo_", "pin_"):
+                self.addtag_withtag("dyn", f"{prefijo}{clave}")
+
+    def _imagen_ruta(self, clave):
+        """Resplandor del cable de un componente hasta su pin, con el cable encima (se crea la primera vez)."""
+        if clave in self._img_rutas or clave not in self._cables:
+            return
+        puntos, color, ancho = self._cables[clave]
+        z, (ox, oy) = self._z, self._origen_actual()
+        ruta = [(ox + x * z, oy + y * z) for x, y in self._rutas[clave]]
+        img, x0, y0 = raster.resplandor_ruta(ruta, T.ACENTO, (ancho + 7) * z)
+        lienzo = raster.LienzoImagen(img.width, img.height, z, (ox - x0, oy - y0), self.S)
+        D.cable(D.Pincel(lienzo, z, self._fuente, self.S, self.mesa), puntos, color, ancho=ancho)
+        img.alpha_composite(lienzo.imagen())
+        foto = raster.foto(img)
+        self._img_rutas[clave] = (foto, x0 - ox, y0 - oy)
+        self.create_image(x0, y0, anchor="nw", image=foto, state="hidden",
+                          tags=("escena", "ruta_img", f"ruta_{clave}"))
+        self.tag_raise(f"ruta_{clave}", "fija")
+
+    def _componente_en(self, x, y):
+        """Qué componente hay bajo el punto (x, y) del lienzo, o None."""
+        if not self._listo() or not self._zonas:
+            return None
+        ox, oy = self._origen_actual()
+        vx, vy = (x - ox) / self._z, (y - oy) / self._z
+        for clave, (a, b, c, d) in reversed(self._zonas):
+            if a <= vx <= c and b <= vy <= d:
+                return clave
+        return None
+
+    def _mesa(self, w, h):
+        """Fondo de mesa de trabajo con una rejilla de puntos, fijo aunque se mueva el montaje (sin Pillow)."""
         s = self.S
         self.create_rectangle(0, 0, w, h, fill=self.mesa, outline="", tags=("fondo",))
         punto = T.mezclar(self.mesa, T.TEXTO_3, 0.28)
@@ -279,6 +445,11 @@ class Protoboard(tk.Canvas):
                 x += paso
             y += paso
         self.tag_lower("fondo")
+
+    def _marco(self, w, h):
+        """Tk no recorta: con zoom, el montaje se saldría por las esquinas redondeadas. Encima van unas máscaras
+        del color de la tarjeta en las cuatro esquinas y el borde (etiqueta `marco`)."""
+        s = self.S
         radio = 14 * s
         x1, y1 = w - 1, h - 1
         for esquina, (cx, cy), desde in (((0, 0), (radio, radio), 90), ((w, 0), (x1 - radio, radio), 0),
@@ -292,55 +463,94 @@ class Protoboard(tk.Canvas):
                       (0.5, radio, 0.5, y1 - radio), (x1 - 0.5, radio, x1 - 0.5, y1 - radio)):
             self.create_line(*linea, fill=T.BORDE, tags=("marco",))
 
-    def _escena(self, p: D.Pincel):
-        usados = {str(pin) for pin in (*PINES.values(), PIN_DHT)} | {"5V"}
-        D.placa_arduino(p, usados)
-        D.protoboard(p)
-        self._montaje(p)
+    def _escena(self, pf, pd):
+        """Dibuja el montaje. `pf`: lo fijo (imagen o lienzo); `pd`: lo que cambia, si va en el mismo lienzo (sin
+        Pillow). Con los dos en None solo recalcula zonas, recorridos y cables (la imagen ya está hecha)."""
+        if pf is not None:
+            usados = {str(pin) for pin in (*PINES.values(), PIN_DHT)} | {"5V"}
+            D.placa_arduino(pf, usados)
+            D.protoboard(pf)
+        self._montaje(pf, pd)
 
     def _anillo_pin(self, p, clave, x, y):
         """Anillo que marca en la cabecera el pin de un componente (al resaltarlo)."""
-        self.create_oval(x - 7, y - 7, x + 7, y + 7, outline=T.ACENTO, width=p.a(2.2), state="hidden",
-                         tags=(f"pin_{clave}",))
+        p.c.create_oval(x - 7, y - 7, x + 7, y + 7, outline=T.ACENTO, width=p.a(2.2), state="hidden",
+                        tags=(f"pin_{clave}",))
 
-    def _montaje(self, p: D.Pincel):
+    def _montaje(self, pf, pd):
         col_x, fa, fb = D.col_x, D.FILAS_ARRIBA, D.FILAS_ABAJO
+        dibuja = pf is not None
+        nada = D.Pincel(_Nulo(), 1, self._fuente, self.S, self.mesa)       # para calcular sin dibujar
+        p = pf if dibuja else nada
         # alimentación: 5V y GND de la placa a los rieles de abajo
-        D.cable(p, ((D.pin_x("5V", D.PINES_POTENCIA, D.HEADER_P), D.HEADER_P[1]), (360, 312), (col_x(0), D.RIEL_POS)),
-                D.COLOR_CABLE["5V"])
-        D.cable(p, ((D.pin_x("GND", D.PINES_POTENCIA, D.HEADER_P) + 14, D.HEADER_P[1]), (366, 322),
-                    (col_x(1), D.RIEL_NEG)), D.COLOR_CABLE["GND"])
+        if dibuja:
+            D.cable(p, ((D.pin_x("5V", D.PINES_POTENCIA, D.HEADER_P), D.HEADER_P[1]), (360, 312),
+                        (col_x(0), D.RIEL_POS)), D.COLOR_CABLE["5V"])
+            D.cable(p, ((D.pin_x("GND", D.PINES_POTENCIA, D.HEADER_P) + 14, D.HEADER_P[1]), (366, 322),
+                        (col_x(1), D.RIEL_NEG)), D.COLOR_CABLE["GND"])
+        self._centros, self._rutas, self._cables, self._pines, self._zonas = {}, {}, {}, {}, []
+        r = D.R_LED
         # LEDs
-        self._centros, self._rutas = {}, {}
         for i, c in enumerate(orden_leds()):
             ca = COLS_LED[i]
             xa, xk = col_x(ca), col_x(ca + 1)
             tag = (f"sel_{c}",)
             px = D.pin_x(str(PINES[c]))
-            self._anillo_pin(p, c, px, D.HEADER_D[1])
+            self._pines[c] = (px, D.HEADER_D[1])
+            if pd is not None:
+                self._anillo_pin(pd, c, px, D.HEADER_D[1])
             puntos = ((px, D.HEADER_D[1]), ((px + xa) / 2, 6 + i * 4), (xa, fa[0]))
-            self._rutas[c] = D.cable(p, puntos, color_cable(c), tag, ruta_tag=f"ruta_{c}")
-            D.resistencia(p, xa, fa[3], fb[0], ("#c92a2a", "#c92a2a", "#7a4a12", "#d4af37"), tag)
-            D.cable(p, ((xk, fb[4]), (xk + 4, D.RIEL_NEG - 12), (xk, D.RIEL_NEG)), D.COLOR_CABLE["GND"], tag, 2.6)
+            self._cables[c] = (puntos, color_cable(c), 3.2)
+            self._rutas[c] = D.cable(p, puntos, color_cable(c), tag, ruta_tag=f"ruta_{c}" if pd is not None else None)
             cx, cy = (xa + xk) / 2, fb[2]
             self._centros[c] = (cx, cy)
-            D.led(p, c, cx, cy, ((xa, fb[1]), (xk, fb[1])), tag)
-            D.pastilla(p, cx, 326, f"pin {PINES[c]}", T.LED_BASE[c], tag)
+            self._zonas += [(c, (cx - r - 3, cy - r - 3, cx + r + 3, cy + r + 3)), (c, (cx - 18, 319, cx + 18, 333))]
+            if dibuja:
+                D.resistencia(p, xa, fa[3], fb[0], ("#c92a2a", "#c92a2a", "#7a4a12", "#d4af37"), tag)
+                D.cable(p, ((xk, fb[4]), (xk + 4, D.RIEL_NEG - 12), (xk, D.RIEL_NEG)), D.COLOR_CABLE["GND"], tag,
+                        2.6)
+                if pd is not None:
+                    D.led(p, c, cx, cy, ((xa, fb[1]), (xk, fb[1])), tag)
+                else:
+                    D.led_patas(p, cx, cy, ((xa, fb[1]), (xk, fb[1])), tag)
+                D.pastilla(p, cx, 326, f"pin {PINES[c]}", T.LED_BASE[c], tag)
         # DHT11: VCC, DATA y GND en columnas seguidas
         xv, xd, xg = col_x(COL_DHT), col_x(COL_DHT + 1), col_x(COL_DHT + 2)
         tag = (f"sel_{DHT.id}",)
         px = D.pin_x(str(PIN_DHT))
-        self._anillo_pin(p, DHT.id, px, D.HEADER_D[1])
-        self._rutas[DHT.id] = D.cable(p, ((px, D.HEADER_D[1]), ((px + xd) / 2, 2), (xd + 40, 40), (xd + 34, 180),
-                                          (xd, fb[1])), D.COLOR_CABLE["DHT"], ruta_tag=f"ruta_{DHT.id}")
-        D.dht(p, DHT.id, xv, xd, xg, tag)
-        D.cable(p, ((xv, fb[4]), (xv - 4, D.RIEL_POS - 12), (xv, D.RIEL_POS)), D.COLOR_CABLE["5V"], ancho=2.6)
-        D.cable(p, ((xg, fb[4]), (xg + 4, D.RIEL_NEG - 12), (xg, D.RIEL_NEG)), D.COLOR_CABLE["GND"], ancho=2.6)
-        D.resistencia(p, xd, fb[3], D.RIEL_POS, ("#7a4a12", "#212529", "#e8590c", "#d4af37"))
-        D.pastilla(p, xd, 326, f"pin {PIN_DHT}", DHT.color, tag)
+        self._pines[DHT.id] = (px, D.HEADER_D[1])
+        if pd is not None:
+            self._anillo_pin(pd, DHT.id, px, D.HEADER_D[1])
+        puntos = ((px, D.HEADER_D[1]), ((px + xd) / 2, 2), (xd + 40, 40), (xd + 34, 180), (xd, fb[1]))
+        self._cables[DHT.id] = (puntos, D.COLOR_CABLE["DHT"], 3.2)
+        self._rutas[DHT.id] = D.cable(p, puntos, D.COLOR_CABLE["DHT"],
+                                      ruta_tag=f"ruta_{DHT.id}" if pd is not None else None)
+        self._zonas += [(DHT.id, (xv - 18, 84, xg + 18, 166)), (DHT.id, (xd - 18, 319, xd + 18, 333))]
+        if dibuja:
+            D.dht(p, DHT.id, xv, xd, xg, tag)
+            if pd is not None:
+                D.dht_marcas(pd, DHT.id, xv, xg)
+            D.cable(p, ((xv, fb[4]), (xv - 4, D.RIEL_POS - 12), (xv, D.RIEL_POS)), D.COLOR_CABLE["5V"], ancho=2.6)
+            D.cable(p, ((xg, fb[4]), (xg + 4, D.RIEL_NEG - 12), (xg, D.RIEL_NEG)), D.COLOR_CABLE["GND"], ancho=2.6)
+            D.resistencia(p, xd, fb[3], D.RIEL_POS, ("#7a4a12", "#212529", "#e8590c", "#d4af37"))
+            D.pastilla(p, xd, 326, f"pin {PIN_DHT}", DHT.color, tag)
 
-    def _pintar_led(self, c):
-        D.pintar_led(self, c, T.LED_BASE[c], self._brillos[c] / 255)
+    def _pintar_led(self, c, forzar=False):
+        b = self._brillos[c] / 255
+        if not self._raster:
+            D.pintar_led(self, c, T.LED_BASE[c], b)
+            return
+        if not self._listo() or c not in self._centros:
+            return
+        nivel = round(b * (NIVELES_LED - 1))
+        if nivel == self._nivel_led.get(c) and not forzar:
+            return
+        self._nivel_led[c] = nivel
+        clave = (c, nivel)
+        if clave not in self._sprites:
+            img, _ = raster.sprite_led(T.LED_BASE[c], nivel / (NIVELES_LED - 1), self._z, D.R_LED, D.EXTRA_LUZ)
+            self._sprites[clave] = raster.foto(img)
+        self.itemconfigure(f"spr_{c}", image=self._sprites[clave])
 
     def _marcar_seleccion(self):
         elegido = self._clave_elegida()
@@ -355,8 +565,13 @@ class Protoboard(tk.Canvas):
             self.itemconfigure(f"halo_{clave}", state="normal" if clave == encima else "hidden")
             if clave in (encima, elegido):
                 fuerte = clave == encima
-                self.itemconfigure(f"ruta_{clave}", state="normal",
-                                   fill=T.mezclar(self.mesa, T.ACENTO, 0.55 if fuerte else 0.28))
+                if self._raster:
+                    if self._listo() and not self._en_previa:      # en la vista previa del zoom, después
+                        self._imagen_ruta(clave)
+                    self.itemconfigure(f"ruta_{clave}", state="normal")
+                else:
+                    self.itemconfigure(f"ruta_{clave}", state="normal",
+                                       fill=T.mezclar(self.mesa, T.ACENTO, 0.55 if fuerte else 0.28))
                 self.itemconfigure(f"pin_{clave}", state="normal", width=max(1, (2.4 if fuerte else 1.6) * self._z))
             else:
                 self.itemconfigure(f"ruta_{clave}", state="hidden")
@@ -535,7 +750,7 @@ class Protoboard(tk.Canvas):
             return
         etiquetas = (self.gettags("current") or ()) if e is not None else ()
         encima_de_algo = "ficha" in etiquetas or "ctl" in etiquetas
-        comp = None if encima_de_algo else self._componente_de(etiquetas)
+        comp = None if encima_de_algo or e is None else self._componente_en(e.x, e.y)
         ctl = self._control_de(etiquetas)
         if comp != self._encima_comp:
             self._encima_comp = comp
@@ -562,7 +777,11 @@ class Protoboard(tk.Canvas):
             pass
         self._inicio = self._ultimo = (e.x, e.y)
         self._arrastrando = False
-        self._bajo = self.gettags("current") or ()
+        self._bajo = tuple(self.gettags("current") or ())
+        if "ficha" not in self._bajo and "ctl" not in self._bajo:
+            comp = self._componente_en(e.x, e.y)
+            if comp is not None:
+                self._bajo += (f"sel_{comp}",)
 
     def _arrastrar(self, e):
         if self._inicio is None or self._origen is None:          # sin zoom no hay nada que desplazar
@@ -593,6 +812,8 @@ class Protoboard(tk.Canvas):
         self._inicio, self._arrastrando = None, False
         if arrastre:
             self.configure(cursor="")
+            if self._fija_parcial:
+                self._redibujar_escena()                # pinta la parte del montaje que ahora se ve
         else:
             self._clic(etiquetas)
 
@@ -621,7 +842,7 @@ class Protoboard(tk.Canvas):
     def _doble_clic(self, e):
         """Doble clic en un hueco: volver a ver todo."""
         etiquetas = self.gettags("current") or ()
-        if not any(et.startswith(("sel_", "ctl", "ficha")) for et in etiquetas):
+        if self._componente_en(e.x, e.y) is None and not any(et.startswith(("ctl", "ficha")) for et in etiquetas):
             self.ajustar()
 
     def _rueda(self, x, y, acercar):
@@ -645,6 +866,8 @@ class Protoboard(tk.Canvas):
             dx = {"Left": paso, "Right": -paso}.get(k, 0)
             dy = {"Up": paso, "Down": -paso}.get(k, 0)
             self._desplazar(dx, dy)
+            if self._fija_parcial:
+                self._programar_redibujo(200)
 
     # ================================================================ zoom suave
     def _cancelar_zoom(self):
@@ -668,6 +891,11 @@ class Protoboard(tk.Canvas):
         self._origen = zoom_en_punto(px, py, z0, z1, origen)
         self._zoom = nuevo
         self.delete("anim")
+        if self._raster:
+            # Las imágenes no se escalan con Canvas.scale: vista previa al momento y nítida al parar la rueda.
+            self._rapido = True
+            self._programar_redibujo()
+            return
         self._anim_zoom = [FOTOGRAMAS_ZOOM, (z1 / z0) ** (1 / FOTOGRAMAS_ZOOM), px, py]
         self._paso_zoom()
 
@@ -677,7 +905,14 @@ class Protoboard(tk.Canvas):
         n -= 1
         if n <= 0:
             self._anim_zoom = self._id_anim_zoom = None
-            self._redibujar()                       # nítido: grosores y letras al nuevo zoom
+            self._redibujar_escena()                # nítido: grosores y letras al nuevo zoom
             return
         self._anim_zoom[0] = n
         self._id_anim_zoom = self.after(14, self._paso_zoom)
+
+
+class _Nulo:
+    """Lienzo que no dibuja nada: para recalcular recorridos y zonas sin volver a pintar la imagen fija."""
+
+    def __getattr__(self, nombre):
+        return lambda *a, **k: None

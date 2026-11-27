@@ -275,18 +275,33 @@ R_LED = 11
 CAPAS_DOMO = 5
 
 
+EXTRA_LUZ = 34          # cuánto se derrama la luz del LED alrededor de su cúpula
+
+
+def led_patas(p: Pincel, cx: float, cy: float, patas, tags=()):
+    """Las patas del LED hasta sus agujeros (no cambian: van en la imagen fija)."""
+    c = p.c
+    for (x, y) in patas:
+        c.create_line(cx + (x - cx) * 0.3, cy, x, y, fill="#a7adb3", width=p.a(1.3), tags=tags)
+        c.create_oval(x - 1.4, y - 1.4, x + 1.4, y + 1.4, fill="#6c737a", outline="", tags=tags)
+
+
+def marcas(p: Pincel, clave: str, cx: float, cy: float, r: float):
+    """Halo (al pasar el ratón) y anillo (elegido) de un componente redondo: ocultos hasta que hagan falta."""
+    p.c.create_oval(cx - r - 6, cy - r - 6, cx + r + 6, cy + r + 6, outline=T.ACENTO, width=p.a(2.2),
+                    state="hidden", tags=(f"halo_{clave}",))
+    p.c.create_oval(cx - r - 5, cy - r - 5, cx + r + 5, cy + r + 5, outline=T.ACENTO, width=p.a(2.4),
+                    state="hidden", tags=(f"anillo_{clave}",))
+
+
 def led(p: Pincel, clave: str, cx: float, cy: float, patas, tags=()):
-    """LED visto desde arriba. Los rellenos los pone `pintar_led` según el brillo (todo con etiquetas)."""
+    """LED visto desde arriba, todo con elementos del lienzo (sin Pillow). Los rellenos los pone `pintar_led`."""
     c, r = p.c, R_LED
-    for k, extra in enumerate((34, 22, 13, 6)):                 # luz que se derrama sobre la protoboard
+    for k, extra in enumerate((EXTRA_LUZ, 22, 13, 6)):          # luz que se derrama sobre la protoboard
         e = r + extra
         c.create_oval(cx - e, cy - e, cx + e, cy + e, outline="", fill=BB_ARRIBA, state="hidden",
                       tags=tags + (f"luz_{clave}", f"luz_{clave}_{k}"))
-    for (x, y) in patas:                                         # patas hasta sus agujeros
-        c.create_line(cx + (x - cx) * 0.3, cy, x, y, fill="#a7adb3", width=p.a(1.3), tags=tags)
-        c.create_oval(x - 1.4, y - 1.4, x + 1.4, y + 1.4, fill="#6c737a", outline="", tags=tags)
-    c.create_oval(cx - r - 6, cy - r - 6, cx + r + 6, cy + r + 6, outline=T.ACENTO, width=p.a(2.2),
-                  state="hidden", tags=(f"halo_{clave}",))
+    led_patas(p, cx, cy, patas, tags)
     c.create_oval(cx - r + 1.5, cy - r + 3, cx + r + 2.5, cy + r + 3.5, fill=T.mezclar(BB_ABAJO, "#000000", 0.2),
                   outline="", tags=tags)
     c.create_oval(cx - r - 1.8, cy - r - 1.8, cx + r + 1.8, cy + r + 1.8, outline="", fill="#cccccc",
@@ -302,8 +317,7 @@ def led(p: Pincel, clave: str, cx: float, cy: float, patas, tags=()):
                   tags=tags + (f"reflejo_{clave}",))
     c.create_oval(cx + r * 0.28, cy + r * 0.3, cx + r * 0.46, cy + r * 0.48, outline="", fill="#ffffff",
                   tags=tags + (f"reflejo2_{clave}",))
-    c.create_oval(cx - r - 5, cy - r - 5, cx + r + 5, cy + r + 5, outline=T.ACENTO, width=p.a(2.4),
-                  state="hidden", tags=(f"anillo_{clave}",))
+    marcas(p, clave, cx, cy, r)
 
 
 def pintar_led(c, clave: str, base: str, b: float):
@@ -328,8 +342,6 @@ def dht(p: Pincel, clave: str, xv, xd, xg, tags=()):
     """Sensor DHT11: carcasa azul con rejilla de ranuras, patas en tres columnas seguidas."""
     c = p.c
     x0, y0, x1, y1 = xv - 18, 84, xg + 18, 150
-    rect_redondo(c, xv - 25, 77, xg + 25, 168, 9, fill="", outline=T.ACENTO, width=p.a(2.2), state="hidden",
-                 tags=(f"halo_{clave}",))
     for x in (xv, xd, xg):
         c.create_line(x, y1 - 4, x, FILAS_ABAJO[0], fill="#a7adb3", width=p.a(1.6), tags=tags)
         c.create_oval(x - 1.5, FILAS_ABAJO[0] - 1.5, x + 1.5, FILAS_ABAJO[0] + 1.5, fill="#6c737a", outline="",
@@ -343,5 +355,11 @@ def dht(p: Pincel, clave: str, xv, xd, xg, tags=()):
             rect_redondo(c, x - 5, y - 3.4, x + 5, y + 3.4, 2.2, fill="#124f8d", outline="", tags=tags)
             c.create_line(x - 3.5, y + 3.6, x + 3.5, y + 3.6, fill="#7cc0f8", width=p.a(0.8), tags=tags)
     c.create_text(xd, 160, text="DHT11", fill="#6b6457", font=p.f(7, True), tags=tags)
-    rect_redondo(c, xv - 23, 79, xg + 23, 166, 8, fill="", outline=T.ACENTO, width=p.a(2.4), state="hidden",
+
+
+def dht_marcas(p: Pincel, clave: str, xv, xg):
+    """Halo y anillo del DHT11 (ocultos hasta que hagan falta)."""
+    rect_redondo(p.c, xv - 25, 77, xg + 25, 168, 9, fill="", outline=T.ACENTO, width=p.a(2.2), state="hidden",
+                 tags=(f"halo_{clave}",))
+    rect_redondo(p.c, xv - 23, 79, xg + 23, 166, 8, fill="", outline=T.ACENTO, width=p.a(2.4), state="hidden",
                  tags=(f"anillo_{clave}",))

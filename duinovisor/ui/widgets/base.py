@@ -11,6 +11,8 @@ from duinovisor.ui import tema as T
 
 
 def rect_redondo(c, x0, y0, x1, y1, r, **kw):
+    if hasattr(c, "redondo"):                       # lienzo de imagen (widgets/raster): rectángulo nativo
+        return c.redondo(x0, y0, x1, y1, r, **kw)
     r = max(0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))
     pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1, x1 - r, y1,
            x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]

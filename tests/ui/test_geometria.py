@@ -3,12 +3,14 @@ import pytest
 
 from duinovisor.ui.widgets.geometria import (
     bandas,
+    curva_cerrada,
     curva_suave,
     encaje,
     limitar_origen,
     longitud,
     origen_centrado,
     punto_en,
+    recorte_previa,
     suavizar,
     zoom_en_punto,
 )
@@ -67,3 +69,22 @@ def test_limitar_centra_si_cabe_y_no_deja_huecos_si_no():
 def test_suavizar():
     assert suavizar(0) == 0 and suavizar(1) == 1 and suavizar(2) == 1
     assert 0.5 < suavizar(0.5) < 1                                                # ease-out: va rápido al principio
+
+
+def test_curva_cerrada_redondea_sin_salirse():
+    cuadrado = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    curva = curva_cerrada(cuadrado, 4)
+    assert len(curva) == 16
+    assert all(0 <= x <= 10 and 0 <= y <= 10 for x, y in curva)
+    assert (0, 0) not in curva                                                  # las esquinas quedan redondeadas
+
+
+def test_recorte_previa_lleva_cada_punto_a_su_sitio():
+    # imagen de 1000 x 500 pintada con zoom 1 y el origen del montaje en (100, 50) dentro de ella
+    caja, pos, tam = recorte_previa((1000, 500), (100, 50), 1.0, 2.0, (0, 0), (800, 400))
+    # con zoom 2 y origen en (0, 0) se ve el montaje de (0, 0) a (400, 200): en la imagen, de (100, 50) a (500, 250)
+    assert caja == (100, 50, 500, 250) and pos == (0, 0) and tam == (800, 400)
+    caja, pos, tam = recorte_previa((1000, 500), (100, 50), 1.0, 0.5, (300, 100), (800, 400))
+    assert caja == (0, 0, 1000, 500)                                            # al alejar se ve la imagen entera
+    assert pos == pytest.approx((300 - 50, 100 - 25)) and tam == (500, 250)
+    assert recorte_previa((100, 100), (0, 0), 1, 1, (5000, 5000), (800, 400)) is None

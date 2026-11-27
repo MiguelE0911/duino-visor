@@ -48,7 +48,7 @@ duino-visor/
 ## Instalación y uso
 
 ```bash
-pip install -e .                # Python 3.10+; instala pyserial y el comando «duinovisor»
+pip install -e .                # Python 3.10+; instala pyserial, Pillow y el comando «duinovisor»
 # Linux (Ubuntu/Debian): Tkinter y permisos del puerto
 sudo apt install python3-tk
 sudo usermod -aG dialout $USER  # cerrar sesión y volver a entrar
