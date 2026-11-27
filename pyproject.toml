@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "duinovisor"
+version = "1.0.0"
+description = "Control de un Arduino (3 LEDs y un DHT11) en tiempo real con Tkinter y pyserial"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["pyserial>=3.5"]
+
+[project.optional-dependencies]
+pruebas = ["pytest>=7"]
+
+[project.gui-scripts]
+duinovisor = "duinovisor.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["duinovisor*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--import-mode=importlib"
+
+[tool.ruff]
+line-length = 120
