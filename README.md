@@ -34,7 +34,8 @@ duino-visor/
 │       ├── tema.py             temas claro/oscuro, acentos y tipografía
 │       ├── constantes.py       textos y ajustes compartidos de la ventana
 │       ├── estado_led.py       variables editables de cada LED
-│       ├── vistas/             cabecera, luces, clima, detalles, ajustes (crean widgets)
+│       ├── fichas.py           textos de la ficha de cada componente de la protoboard
+│       ├── vistas/             cabecera, luces, clima, configuracion, detalles, acerca (crean widgets)
 │       ├── controladores/      conexión, envío, espejo, secuencias, archivos, sensor
 │       └── widgets/            base, contenedores, botones, controles, luces, indicadores,
 │                               grafica y protoboard (dibujados en Canvas)
@@ -124,16 +125,33 @@ porque les falta el LED nuevo.
 - **Luces**: el semáforo ocupa el centro. Haz clic en una luz (o en su chip de abajo) y elige en el panel de la
   derecha qué hace: *Apagada*, *Encendida*, *Parpadea* o *Respira*, con su brillo y un ritmo *Lento / Normal /
   Rápido*. El conmutador **Semáforo | Protoboard** muestra el montaje real (placa, protoboard, resistencias,
-  cables y DHT11); ahí también se elige un LED con un clic, y al pasar el ratón se ve su pin.
-  Debajo, las **Animaciones** (secuencias). Los cambios se envían con **Aplicar cambios** (o Ctrl+Intro).
-- **Clima**: temperatura, humedad, gráfica de los últimos minutos, avisos y el semáforo según la temperatura.
-- **Mostrar detalles** enseña lo técnico: puerto serie y conexión, registro de órdenes enviadas y recibidas,
-  milisegundos exactos de cada LED, valor PWM, pin y cada cuánto se lee el sensor.
-- **⋯** abre el menú: guardar o cargar escena, exportar CSV y **Ajustes** (tema claro u oscuro y color de
-  acento). El botón de la luna o el sol cambia de tema al momento; la elección se recuerda.
+  cables y DHT11). En la protoboard:
+  - La rueda del ratón acerca o aleja alrededor del puntero, se arrastra para moverse, y los botones
+    **+ / − / Ajustar** (o un doble clic en un hueco) vuelven a mostrarlo todo.
+  - Un clic en un LED lo elige para editarlo; un clic en el DHT11 lo marca.
+  - Debajo aparece la **ficha** del componente elegido: qué es, a qué pin está conectado, qué hace y cómo está
+    ahora (brillo en vivo o la última lectura).
+
+  A la derecha, las **Animaciones** (secuencias). Los cambios se envían con **Aplicar cambios** (o Ctrl+Intro).
+- **Clima**: temperatura y humedad, la gráfica de los últimos minutos, los avisos y el semáforo según la
+  temperatura. Un conmutador cambia entre **Medidor y barras** y **Termómetro y gota** (un termómetro de tubo y
+  una gota que se llena con la humedad); la elección se recuerda.
+- **Configuración** reúne los ajustes, cada uno con una frase que explica qué cambia:
+  - **Conexión**: buscar el Arduino al abrir (se puede apagar), el puerto, *Conectar* y *Buscar de nuevo*.
+  - **Sensor**: cada cuánto se lee (de 1 s a 1 min; con los detalles abiertos, el valor exacto en ms).
+  - **Apariencia**: tema claro u oscuro y color de acento (el botón de la luna o el sol también cambia el tema).
+  - Las preferencias se guardan en `%APPDATA%/DuinoVisor/ajustes.json` (en Linux, `~/.config/duinovisor/`).
+- **Mostrar detalles** enseña lo técnico: el registro de órdenes enviadas y recibidas, los milisegundos
+  exactos de cada LED, el valor PWM y el pin.
+- **⋯** abre el menú: guardar o cargar escena, exportar CSV, **Configuración** y **Acerca de DuinoVisor**
+  (qué es, sus autores y la asignatura).
 - En Windows con escalado de pantalla (125 %, 150 %) la ventana se dibuja a la resolución real, sin verse borrosa.
 
-![Vista de protoboard](docs/vista_protoboard.png)
+![Vista de protoboard con la ficha del LED elegido](docs/vista_protoboard.png)
+
+![Clima con termómetro y gota](docs/vista_clima.png)
+
+![Pestaña Configuración](docs/vista_configuracion.png)
 
 ## Secuencias y semáforo espejo
 
@@ -198,7 +216,7 @@ secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en ca
 
 ```bash
 pip install -e ".[pruebas]"
-python -m pytest -q             # 130 pruebas
+python -m pytest -q             # 148 pruebas
 ruff check duinovisor tests     # lint (reglas fijadas en pyproject.toml)
 ```
 
