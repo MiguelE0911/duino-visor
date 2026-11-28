@@ -1,0 +1,10 @@
+{
+  "name": "duinovisor-movil",
+  "private": true,
+  "description": "DuinoVisor en el celular: controla la placa por Bluetooth LE desde el navegador.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "servir": "python -m http.server 8000"
+  }
+}

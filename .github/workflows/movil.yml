@@ -1,0 +1,48 @@
+# Prueba la app del celular y la publica en GitHub Pages (Web Bluetooth exige https).
+name: App del celular
+
+on:
+  push:
+    branches: [main, app-movil]
+    paths: ["movil/**", ".github/workflows/movil.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  probar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Pruebas
+        working-directory: movil
+        run: node --test
+
+  publicar:
+    needs: probar
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Armar el sitio (solo lo que usa el navegador)
+        run: |
+          mkdir _site
+          cp -r movil/index.html movil/css movil/js movil/iconos _site/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: despliegue
+        uses: actions/deploy-pages@v4

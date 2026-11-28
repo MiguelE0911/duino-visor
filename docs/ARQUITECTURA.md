@@ -79,8 +79,8 @@ la decisión no necesita la ventana para nada, en `dominio/`.
 
 | Quiero añadir… | Pasos |
 | --- | --- |
-| Un LED nuevo | Una entrada en `LEDS` de `dominio/placa.py` y la misma línea en `leds[]` del sketch (pin con PWM). El resto se adapta solo; ver «Añadir un LED» en el README |
-| Una animación nueva | `SECUENCIAS` y `NOMBRES_SEQ` en `dominio/secuencias.py` (pasos `(ms, {LED: brillo})`) y la misma tabla en el sketch (una columna por LED, en el orden de `leds[]`). La ventana y el simulador la muestran solos |
+| Un LED nuevo | Una entrada en `LEDS` de `dominio/placa.py`, la misma línea en `leds[]` del sketch (pin con PWM) y en `LEDS` de `movil/js/catalogo.js`. El resto se adapta solo; ver «Añadir un LED» en el README |
+| Una animación nueva | `SECUENCIAS` y `NOMBRES_SEQ` en `dominio/secuencias.py` (pasos `(ms, {LED: brillo})`), la misma tabla en el sketch (una columna por LED, en el orden de `leds[]`) y en `movil/js/catalogo.js`. La ventana, el celular y los simuladores la muestran solos |
 | Un modo de LED nuevo | `MODOS`, `errores` y `brillo_en` en `dominio/leds.py`; `comando_led` en `dominio/protocolo.py`; el sketch; el simulador; la etiqueta en `ui/constantes.MODOS` y sus controles en `vistas/luces.py` |
 | Una orden nueva del protocolo | Función `comando_*` / `Paso` en `dominio/protocolo.py` (y `confirmar` si cambia el estado), el sketch y el simulador |
 | Un sensor nuevo | Su lectura en `dominio/protocolo.interpretar`, su `Sensor` en `SENSORES` de `dominio/placa.py` (con su `descripcion` para la ficha), el simulador, su dibujo en `widgets/protoboard.py` con la etiqueta `sel_<id>`, y una vista o tarjeta en `ui/vistas/` |
@@ -112,3 +112,36 @@ Reglas: no hacer `tag_raise`/`tag_lower` de capas grandes en cada fotograma; con
 solo la escena (`_redibujar_escena`); y para algo que dependa de lo que hay bajo el ratón, buscarlo por geometría
 (`_componente_en`) y no por las etiquetas de los elementos, que en la imagen no existen. Para medir, pon la pantalla
 al 125 % o 150 %: es donde se nota.
+
+## La app del celular (`movil/`)
+
+Una página web con **Web Bluetooth** (HTML, CSS y JavaScript sin framework ni compilación) que habla con la
+placa por BLE con **las mismas órdenes de texto** que el escritorio. No comparte código con Python, pero sí el
+contrato: `tests/firmware/` comprueba que sus tablas y su placa simulada coinciden con el sketch.
+
+```
+app.js ──► envio.js ──► protocolo.js ──► catalogo.js
+   │                         ▲
+   ├──► transporte.js ──► lineas.js          (Bluetooth: el único módulo que lo toca)
+   └──► simulador.js  ──► automatismos.js    (modo demo, con la misma interfaz que transporte.js)
+```
+
+| Módulo | Qué hace | ¿Toca el navegador? |
+| --- | --- | --- |
+| `catalogo.js` | LEDs, UUID BLE, límites, animaciones, zonas del semáforo térmico y ritmos (espejo de `dominio/` y del sketch) | No |
+| `protocolo.js` | Armar órdenes, interpretar respuestas, leer `STATUS`, brillo en cada instante, textos de resumen | No |
+| `automatismos.js` | Animaciones (`SecuenciaLocal`) y zonas del semáforo térmico | No |
+| `lineas.js` | Partir una orden en paquetes de 20 bytes y rearmar las líneas que llegan | No |
+| `envio.js` | Una orden a la vez, espera su `OK`/`ERR`/`PONG`, un reintento; recoge las líneas `STATE` | No |
+| `simulador.js` | `PlacaSimulada` (responde como el sketch) y `TransporteDemo` | No |
+| `transporte.js` | Web Bluetooth: elegir la placa, notificaciones, escribir en trozos, reconectar con esperas crecientes | Sí |
+| `app.js` | La pantalla: conexión, luces, clima, detalles y órdenes a mano | Sí |
+
+- **Transporte intercambiable:** `TransporteBle` y `TransporteDemo` tienen la misma interfaz (`conectar`,
+  `escribir`, `desconectar`, `alLinea`, `alEstado`). Para una app nativa bastaría otro transporte.
+- **Al conectar** se envía `PING` (¿es nuestra placa?) y `STATUS`; luego `STATUS` cada 5 s mientras la página
+  está visible, porque el escritorio puede cambiar la placa por USB. La app **no** reinicia la placa al
+  conectarse (a diferencia del escritorio, que envía `TERMO OFF`).
+- **Pruebas:** `cd movil && node --test` (módulos sin navegador). `tests/firmware/test_contrato.py` compara
+  `catalogo.js` con `dominio/` y los UUID con el sketch, y `test_sketch.py` envía las mismas órdenes al sketch
+  compilado y a `PlacaSimulada` (con `movil/pruebas/herramientas/puente.js`). Necesitan `node`; sin él se omiten.

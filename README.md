@@ -40,6 +40,7 @@ duino-visor/
 │       └── widgets/            base, contenedores, botones, controles, luces, indicadores,
 │                               grafica y protoboard (dibujados en Canvas)
 ├── firmware/control_leds/      sketch (carpeta y archivo con el mismo nombre, como pide el IDE)
+├── movil/                      app del celular: página web con Web Bluetooth (index.html, css/, js/, pruebas/)
 ├── docs/                       ARQUITECTURA.md y capturas
 └── tests/                      misma estructura: dominio/, hardware/, almacenamiento/, ui/,
                                 firmware/ (contrato con el .ino y pruebas con g++) y test_arquitectura.py
@@ -68,6 +69,26 @@ Probar a mano desde el Monitor Serie (9600 baudios, "Nueva línea"): `PING`, `LE
 `LED Y BLINK 255 500 250`, `LED R FADE 200 2000`, `DHT 2000`, `TERMO 22 28`, `SEQ VIAL`, `SEQ PAUSA`,
 `SEQ SEGUIR`, `SEQ OFF`, `STATUS`.
 
+## Aplicación del celular
+
+`movil/` es una página web que se conecta a la placa por **Bluetooth LE** (solo Arduino 101) y usa las mismas
+órdenes que el escritorio. Funciona en **Chrome o Edge** de Android y de la PC; **no en Safari de iPhone**
+(allí se puede usar el navegador gratuito Bluefy). Por seguridad, el navegador solo permite Bluetooth en páginas
+`https://` o en `localhost`.
+
+```bash
+cd movil
+python -m http.server 8000      # luego abrir http://localhost:8000 en Chrome o Edge
+node --test                     # pruebas de la app (Node 18 o más nuevo)
+```
+
+- **Buscar placa** abre la lista de Bluetooth del navegador: elige `DuinoVisor`. Si la señal se pierde, la app
+  reintenta sola y lo avisa arriba.
+- **Probar sin placa** usa una placa simulada que responde igual que el sketch.
+- En **Mostrar detalles** están el registro de mensajes y un campo para enviar órdenes a mano.
+- Puede usarse a la vez que el escritorio por USB; cada uno recibe sus respuestas y los dos, las lecturas.
+  La app vuelve a leer el estado de la placa cada 5 s para enterarse de los cambios hechos desde la PC.
+
 ## Conexiones
 
 | Componente | Pin | Conexión |
@@ -90,12 +111,13 @@ el pin 9, el último con PWM libre en el 101):
 1. Una línea en `LEDS`: `Led("B", "Azul", "Luz azul", pin=9, color="#3b82f6", fila=3, columna=3)`. `fila` es
    su posición de arriba abajo en el semáforo y `columna`, de izquierda a derecha en la vista protoboard.
 2. La misma línea en la tabla `leds[]` del sketch, en el mismo orden: `{ 'B',  9, M_OFF, 0, 0, 0, 0, 0, false, -1 },`
+   y en `LEDS` de `movil/js/catalogo.js`: `{ id: "B", nombre: "Azul", luz: "Luz azul", color: "#3b82f6", fila: 3 },`
 3. Montarlo como los otros: pin → 220 Ω → ánodo; cátodo → GND.
 
 El resto se adapta solo: protocolo, simulador, semáforo, protoboard, chips, editor y escenas. Las animaciones
 lo dejan apagado hasta que algún paso lo nombre: en Python, `(150, {"B": 255})` en
 `dominio/secuencias.py`; en el sketch, una columna más en ese paso. `tests/firmware/test_contrato.py`
-avisa si la lista de Python y la del sketch no coinciden. Las escenas guardadas antes no se podrán cargar,
+avisa si la lista de Python, la del sketch y la del celular no coinciden. Las escenas guardadas antes no se podrán cargar,
 porque les falta el LED nuevo.
 
 ## Protocolo (9600 baudios, texto, una orden por línea)
@@ -242,14 +264,16 @@ secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en ca
 
 ```bash
 pip install -e ".[pruebas]"
-python -m pytest -q             # 170 pruebas
+python -m pytest -q             # 175 pruebas
 ruff check duinovisor tests     # lint (reglas fijadas en pyproject.toml)
+cd movil && node --test         # 24 pruebas de la app del celular
 ```
 
 Las pruebas de comportamiento del sketch (`tests/firmware/test_sketch.py`) compilan el `.ino` con **g++** contra un
 Arduino simulado; sin g++ se omiten. Para instalarlo: en Windows `winget install BrechtSanders.WinLibs.POSIX.UCRT`
 (y abrir una terminal nueva), en Ubuntu/Debian `sudo apt install g++`. `tests/firmware/test_contrato.py` compara las
-tablas del sketch con las de Python y no necesita g++.
+tablas del sketch con las de Python y no necesita g++. Las pruebas que comparan la app del celular con Python y con
+el sketch necesitan **Node**; sin él se omiten.
 
 Para comprobar que el sketch compila para la placa sin subirlo, con el `arduino-cli` que trae el IDE:
 `arduino-cli compile --fqbn Intel:arc32:arduino_101 firmware/control_leds`.

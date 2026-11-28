@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f6feb">
+  <meta name="description" content="Controla las luces y mira la temperatura de tu placa DuinoVisor por Bluetooth.">
+  <title>DuinoVisor</title>
+  <link rel="icon" href="iconos/icono.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/estilos.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="cabecera">
+    <h1>DuinoVisor</h1>
+    <div id="pastilla" class="pastilla" data-estado="desconectado" role="status" aria-live="polite">
+      <span class="punto" aria-hidden="true"></span><span id="pastilla-texto">Sin conexión</span>
+    </div>
+  </header>
+
+  <!-- Aviso de señal perdida (se muestra sobre cualquier pantalla) -->
+  <div id="aviso-reconexion" class="aviso" hidden>
+    <span class="giro" aria-hidden="true"></span>
+    <p><strong>Se perdió la señal.</strong> <span id="aviso-reconexion-texto">Intentando reconectar…</span></p>
+    <button id="btn-dejar" class="boton boton-texto">Dejar de intentar</button>
+  </div>
+
+  <main>
+    <!-- Pantalla de conexión -->
+    <section id="pantalla-conexion" class="pantalla">
+      <div class="tarjeta conexion">
+        <svg class="icono-bt" viewBox="0 0 48 48" aria-hidden="true">
+          <circle cx="24" cy="24" r="22" />
+          <path d="M17 16l14 12-7 6V14l7 6-14 12" />
+        </svg>
+        <h2>Conecta tu placa</h2>
+        <p>Enciende el Bluetooth del celular, acerca la placa y toca <strong>Buscar placa</strong>.
+          Aparecerá una lista: elige <strong>DuinoVisor</strong>.</p>
+        <p id="sin-bluetooth" class="nota-error" hidden></p>
+        <button id="btn-buscar" class="boton boton-grande">Buscar placa</button>
+        <button id="btn-demo" class="boton boton-secundario">Probar sin placa</button>
+        <p class="nota">«Probar sin placa» usa una placa imaginaria para que veas cómo funciona.</p>
+      </div>
+    </section>
+
+    <!-- Pantallas con la placa conectada -->
+    <section id="pantalla-luces" class="pantalla" hidden>
+      <h2 class="titulo-seccion">Luces</h2>
+      <p id="animacion-actual" class="chip-info" hidden></p>
+      <ul id="lista-luces" class="lista-luces"></ul>
+      <p class="nota">Pronto podrás encenderlas y ajustarlas desde aquí.</p>
+    </section>
+
+    <section id="pantalla-clima" class="pantalla" hidden>
+      <h2 class="titulo-seccion">Clima</h2>
+      <div class="clima">
+        <div class="tarjeta medida">
+          <span class="etiqueta">Temperatura</span>
+          <span class="valor"><span id="temperatura">--</span><small>°C</small></span>
+        </div>
+        <div class="tarjeta medida">
+          <span class="etiqueta">Humedad</span>
+          <span class="valor"><span id="humedad">--</span><small>%</small></span>
+        </div>
+      </div>
+      <p id="clima-hora" class="nota">Esperando la primera lectura del sensor…</p>
+    </section>
+
+    <!-- Detalles técnicos -->
+    <details id="detalles" class="detalles" hidden>
+      <summary>Mostrar detalles</summary>
+      <dl class="datos">
+        <dt>Placa</dt><dd id="det-placa">—</dd>
+        <dt>Conexión</dt><dd id="det-conexion">—</dd>
+      </dl>
+      <p class="nota">Mensajes con la placa (→ enviado, ← recibido):</p>
+      <ol id="registro" class="registro" aria-live="off"></ol>
+      <form id="form-orden" class="form-orden" autocomplete="off">
+        <label for="orden" class="nota">Enviar una orden a mano (p. ej. <code>LED R ON 128</code>):</label>
+        <div class="fila-orden">
+          <input id="orden" name="orden" type="text" maxlength="63" autocapitalize="characters" spellcheck="false"
+                 placeholder="PING" enterkeyhint="send">
+          <button class="boton boton-envio" type="submit">Enviar</button>
+        </div>
+      </form>
+      <button id="btn-desconectar" class="boton boton-secundario">Desconectar</button>
+    </details>
+  </main>
+
+  <nav id="pestanas" class="pestanas" hidden>
+    <button class="pestana" data-pantalla="luces" aria-current="page">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>
+      Luces
+    </button>
+    <button class="pestana" data-pantalla="clima">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/></svg>
+      Clima
+    </button>
+  </nav>
+
+  <div id="mensaje" class="mensaje" role="alert" hidden></div>
+</body>
+</html>

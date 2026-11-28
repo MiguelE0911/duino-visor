@@ -337,3 +337,28 @@ def test_ble_al_desconectar_vuelve_a_anunciar_y_olvida_lo_pendiente(binario):
     s = correr(binario, "ble on", "b> STATUS", "ble off", "t 100", "ble on", "b> PING", "t 100")
     assert sum(1 for x in s if x.endswith("ANUNCIO")) == 2             # al arrancar y al desconectarse
     assert respuestas_ble(s) == ["PONG OAC-LEDS 1"]                    # nada del STATUS anterior
+
+
+# ----------------------------------- la placa simulada de la app del celular responde igual que el sketch
+ORDENES_COMPARADAS = [
+    "PING", "STATUS", "HOLA", "LED", "LED X ON 10", f"LED {COLORES[0]}{COLORES[0]} ON 1",
+    f"led {COLORES[0].lower()} on 10", f"LED {COLORES[0]} ON 300", f"LED {COLORES[0]} ON -1", f"LED {COLORES[0]} ON -0",
+    f"LED {COLORES[0]} ON abc", f"LED {COLORES[0]} ON", f"LED {COLORES[0]} ON 10 x y z", f"LED {COLORES[0]} OFF 3",
+    f"LED {COLORES[1]} BLINK 200 100 300", f"LED {COLORES[1]} BLINK 255 10 100", f"LED {COLORES[1]} BLINK 255 100 70000",
+    f"LED {COLORES[-1]} FADE 255 100", f"LED {COLORES[-1]} FADE 120 1500", f"LED {COLORES[-1]} SALTAR", "STATUS",
+    "DHT 500", "DHT 1000", "DHT", "TERMO 30 20", "TERMO 22", "TERMO 22 28", "STATUS", "TERMO OFF",
+    "SEQ", "SEQ FOO", "SEQ PAUSA", "SEQ SEGUIR", "SEQ VIAL 10", "SEQ VIAL rapido", "SEQ VIAL 150", "STATUS",
+    "SEQ PAUSA", "STATUS", "SEQ SEGUIR", "SEQ FANTASTICO", "STATUS", f"LED {COLORES[0]} ON 9", "STATUS",
+    "SEQ ALERTA 400", "SEQ OFF", "STATUS", "A" * 64, "A" * 63, "\tping\t",
+]
+
+
+def test_simulador_movil_responde_igual_que_el_sketch(binario):
+    if shutil.which("node") is None:
+        pytest.skip("se necesita node")
+    sketch = respuestas(correr(binario, *(f"> {o}" for o in ORDENES_COMPARADAS)))
+    puente = AQUI.parents[1] / "movil" / "pruebas" / "herramientas" / "puente.js"
+    r = subprocess.run(["node", str(puente), "responder"], input="\n".join(ORDENES_COMPARADAS) + "\n",
+                       capture_output=True, text=True, encoding="utf-8", timeout=30)
+    assert r.returncode == 0, r.stderr
+    assert respuestas(r.stdout.splitlines()) == sketch
