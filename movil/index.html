@@ -25,6 +25,12 @@
     <button id="btn-dejar" class="boton boton-texto">Dejar de intentar</button>
   </div>
 
+  <!-- Aviso de placa lenta: el Bluetooth del 101 a veces se congela unos segundos y luego se recupera solo -->
+  <div id="aviso-lento" class="aviso" role="status" hidden>
+    <span class="giro" aria-hidden="true"></span>
+    <p><strong>La placa tarda en responder.</strong> Con Bluetooth a veces pasa: espera unos segundos y los cambios se verán solos.</p>
+  </div>
+
   <main>
     <!-- Pantalla de conexión -->
     <section id="pantalla-conexion" class="pantalla">
@@ -76,6 +82,7 @@
       <dl class="datos">
         <dt>Placa</dt><dd id="det-placa">—</dd>
         <dt>Conexión</dt><dd id="det-conexion">—</dd>
+        <dt>Mensajes perdidos</dt><dd id="det-perdidas">Ninguno</dd>
       </dl>
       <p class="nota">Mensajes con la placa (→ enviado, ← recibido):</p>
       <ol id="registro" class="registro" aria-live="off"></ol>
@@ -87,7 +94,10 @@
           <button class="boton boton-envio" type="submit">Enviar</button>
         </div>
       </form>
-      <button id="btn-desconectar" class="boton boton-secundario">Desconectar</button>
+      <div class="fila-botones">
+        <button id="btn-copiar-registro" class="boton boton-secundario" type="button">Copiar registro</button>
+        <button id="btn-desconectar" class="boton boton-secundario" type="button">Desconectar</button>
+      </div>
     </details>
   </main>
 

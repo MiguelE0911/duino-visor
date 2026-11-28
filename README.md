@@ -86,8 +86,12 @@ node --test                     # pruebas de la app (Node 18 o más nuevo)
   reintenta sola y lo avisa arriba.
 - **Probar sin placa** usa una placa simulada que responde igual que el sketch.
 - **Luces:** cada luz tiene su interruptor; al tocarla se abren el modo (fija, parpadea, respira), el brillo y
-  el ritmo. Abajo, «Todas a la vez»: encender o apagar todas y las animaciones con su velocidad, pausa y
-  detener. Cada cambio se envía al momento.
+  el ritmo. Abajo, «Todas a la vez»: encender o apagar todas y las animaciones con su velocidad (muy lenta,
+  lenta o normal: desde el celular no se aceleran, porque el Bluetooth del 101 se trababa), pausa y
+  detener. Cada cambio se envía al momento; si tocas rápido, en la fila solo queda el último cambio de cada luz.
+- **Probar un enlace malo sin placa:** `?pausa=30&perdida=0.1` en la dirección hace que la placa de
+  demostración entregue un trozo cada 30 ms y pierda el 10 %. «Mostrar detalles» cuenta los mensajes perdidos y
+  «Copiar registro» copia todo lo enviado y recibido, con su tiempo, para revisar un problema.
 - En **Mostrar detalles** están el registro de mensajes y un campo para enviar órdenes a mano.
 - Puede usarse a la vez que el escritorio por USB; cada uno recibe sus respuestas y los dos, las lecturas.
   La app vuelve a leer el estado de la placa cada 5 s para enterarse de los cambios hechos desde la PC.
@@ -156,7 +160,10 @@ puede probar con apps genéricas como nRF Connect o Serial Bluetooth Terminal.
 | TX (notificar) | `6E400003-B5A3-F393-E0A9-E50E24DCCA9E` | La placa envía las respuestas en trozos de hasta 20 bytes; cada línea termina en `\n` |
 
 - Una línea puede llegar partida en varios trozos (p. ej. `STATE SEQ FANTASTICO 100 RUN`): hay que juntar
-  hasta el `\n`. Las notificaciones salen separadas al menos 15 ms.
+  hasta el `\n`.
+- La placa envía **como mucho un trozo por intervalo de conexión** (y nunca más seguido que cada 15 ms): la radio
+  del 101 descarta sin avisar las notificaciones que no le caben. Mide el intervalo al conectar y cada segundo, y
+  al segundo de conectarse pide al celular un intervalo de 15 a 30 ms.
 - Cada orden se responde por el canal que la envió; `DATA` sale por los dos.
 - Al desconectarse el celular, la placa descarta lo pendiente y vuelve a anunciarse.
 - En placas sin BLE (p. ej. UNO) el sketch compila igual, solo con el puerto serie.
@@ -267,9 +274,9 @@ secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en ca
 
 ```bash
 pip install -e ".[pruebas]"
-python -m pytest -q             # 175 pruebas
+python -m pytest -q             # 180 pruebas
 ruff check duinovisor tests     # lint (reglas fijadas en pyproject.toml)
-cd movil && node --test         # 37 pruebas de la app del celular
+cd movil && node --test         # 44 pruebas de la app del celular
 ```
 
 Las pruebas de comportamiento del sketch (`tests/firmware/test_sketch.py`) compilan el `.ino` con **g++** contra un

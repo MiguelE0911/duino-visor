@@ -41,6 +41,11 @@ export const SECUENCIAS = {
 };
 export const NOMBRES_SEQ = { VIAL: "Semáforo vial", FANTASTICO: "Auto fantástico", ALERTA: "Alerta amarilla" };
 
+// Velocidades que ofrece el celular (% de la normal). El protocolo admite de VEL_MIN a VEL_MAX, pero desde el
+// celular no se acelera: con animaciones rápidas y cambios seguidos, el Bluetooth del 101 se trababa
+// (2026-11-28). El escritorio, por USB, sigue ofreciendo todo el rango.
+export const VELOCIDADES_MOVIL = [[25, "Muy lenta"], [50, "Lenta"], [100, "Normal"]];
+
 // Semáforo térmico: qué LED se enciende en cada zona (0 fresco, 1 templado, 2 calor).
 export const HISTERESIS_TERMO = 1.0;
 export const LUZ_DE_ZONA = [

@@ -131,13 +131,13 @@ app.js ──► envio.js ──► protocolo.js ──► catalogo.js
 | --- | --- | --- |
 | `catalogo.js` | LEDs, UUID BLE, límites, animaciones, zonas del semáforo térmico y ritmos (espejo de `dominio/` y del sketch) | No |
 | `protocolo.js` | Armar órdenes, interpretar respuestas, leer `STATUS`, brillo en cada instante, textos de resumen | No |
-| `luces.js` | Qué configuración resulta de cada gesto (interruptor, modo, brillo, ritmo; completa tiempos válidos porque `STATUS` da 0 en los que el modo no usa) y «todas a la vez» | No |
+| `luces.js` | Qué configuración resulta de cada gesto (interruptor, modo, brillo, ritmo; completa tiempos válidos porque `STATUS` da 0 en los que el modo no usa), «todas a la vez» y cómo queda la placa tras una orden `SEQ` (`trasOrdenSeq`) | No |
 | `automatismos.js` | Animaciones (`SecuenciaLocal`) y zonas del semáforo térmico | No |
 | `lineas.js` | Partir una orden en paquetes de 20 bytes y rearmar las líneas que llegan | No |
 | `envio.js` | Una orden a la vez, espera su `OK`/`ERR`/`PONG`, un reintento; recoge las líneas `STATE` | No |
 | `simulador.js` | `PlacaSimulada` (responde como el sketch) y `TransporteDemo` | No |
 | `transporte.js` | Web Bluetooth: elegir la placa, notificaciones, escribir en trozos, reconectar con esperas crecientes | Sí |
-| `vistas/luces.js` | Crea y pinta la pantalla Luces: tarjeta por LED (interruptor, modo, brillo, ritmo) y «Todas a la vez» (encender/apagar, animaciones, velocidad, pausa) | Sí |
+| `vistas/luces.js` | Crea y pinta la pantalla Luces: tarjeta por LED (interruptor, modo, brillo, ritmo) y «Todas a la vez» (encender/apagar, animaciones, velocidad de `VELOCIDADES_MOVIL`, sin acelerar; pausa) | Sí |
 | `app.js` | Conexión, estado de la placa, acciones de Luces, clima, detalles y órdenes a mano | Sí |
 
 - **Transporte intercambiable:** `TransporteBle` y `TransporteDemo` tienen la misma interfaz (`conectar`,
@@ -149,6 +149,14 @@ app.js ──► envio.js ──► protocolo.js ──► catalogo.js
   «Enviando…» y lo pedido; con el `OK` pasa a confirmado y luego se relee `STATUS`, porque una orden de LED
   corta la animación y el semáforo térmico y cambia las demás luces. Si falla, avisa y vuelve a lo que diga la
   placa. El interruptor recupera la última configuración encendida de esa luz.
+- **Enlace con pérdidas:** la radio del 101 descarta en silencio las notificaciones que no caben, y una línea
+  puede llegar cortada o pegada a otra. Por eso: el sketch manda un trozo por intervalo de conexión; `envio.js`
+  reemplaza en la fila las órdenes con la misma `clave` (una por luz, `SEQ`, `STATUS`) y espera 1,5 s con un
+  reintento; `lineaValida` detecta líneas rotas; `leerStatus` dice si la respuesta vino `completo` (si no, se
+  aplica lo válido y se vuelve a preguntar); tras un «sin respuesta» se lee la placa antes de avisar, porque casi
+  siempre solo se perdió el `OK`. `STATUS` (6-7 paquetes seguidos, lo que peor lleva el enlace) se pide solo al
+  conectar, tras cortar una animación con una luz, tras un fallo y cada 5 s si no estás tocando nada; tras una
+  orden `SEQ` confirmada, `luces.trasOrdenSeq` calcula cómo quedó la placa, igual que el sketch. `TransporteDemo` puede imitar ese enlace (`pausaMs`, `perdida`).
 - **Pruebas:** `cd movil && node --test` (módulos sin navegador). `tests/firmware/test_contrato.py` compara
   `catalogo.js` con `dominio/` y los UUID con el sketch, y `test_sketch.py` envía las mismas órdenes al sketch
   compilado y a `PlacaSimulada` (con `movil/pruebas/herramientas/puente.js`). Necesitan `node`; sin él se omiten.

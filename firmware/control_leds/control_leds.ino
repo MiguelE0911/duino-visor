@@ -382,7 +382,14 @@ void recibirCaracter(Entrada &e, char c, Print &canal) {
 #define UUID_RX       "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"   // el celular escribe órdenes
 #define UUID_TX       "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"   // la placa notifica respuestas
 #define BLE_TROZO     20       // bytes por paquete BLE
-#define BLE_PAUSA_MS  15       // entre notificaciones, para no llenar la pila BLE
+// Ritmo de las notificaciones. La radio del 101 DESCARTA EN SILENCIO las que no caben en su cola (CurieBLE
+// dice «enviado» siempre), así que se manda como mucho un trozo por intervalo de conexión, que el enlace
+// saca seguro. El intervalo lo elige el celular; se mide al conectar y cada segundo.
+#define BLE_PAUSA_MIN_MS      15     // nunca más seguido que esto
+#define BLE_PAUSA_INICIAL_MS  50     // hasta conocer el intervalo real (Android suele usar 30-50 ms)
+#define BLE_REVISAR_MS        1000   // cada cuánto se vuelve a leer el intervalo
+#define BLE_INTERVALO_MIN_MS  15     // intervalo que se le pide al celular, para no ir lento
+#define BLE_INTERVALO_MAX_MS  30
 
 BLEService        bleServicio(UUID_SERVICIO);
 BLECharacteristic bleRx(UUID_RX, BLEWrite | BLEWriteWithoutResponse, BLE_TROZO);
@@ -412,6 +419,9 @@ Cola<256> bleSalida;      // respuestas pendientes de notificar (la vacía bleAt
 Entrada   entradaBle = { {0}, 0, false };
 bool      bleConectado = false;
 uint32_t  bleUltimoEnvio = 0;
+uint32_t  blePausa = BLE_PAUSA_INICIAL_MS;   // separación entre notificaciones (≈ intervalo de conexión)
+uint32_t  bleRevisado = 0;                   // última vez que se leyó el intervalo
+uint8_t   bleMediciones = 0;                 // lecturas del intervalo en esta conexión
 
 // OJO: BLE.connected() no sirve aquí; BLE es la propia placa y siempre da false. Lo que cuenta es si el
 // celular (el «central») sigue conectado; bleAtender lo consulta una vez por vuelta y lo guarda en bleConectado.
@@ -458,6 +468,20 @@ void bleIniciar() {
   BLE.advertise();
 }
 
+// Lee el intervalo de conexión y ajusta blePausa. En la segunda lectura (ya pasada la conexión inicial)
+// le pide al celular un intervalo corto; puede aceptarlo o no, por eso se sigue midiendo.
+void bleMedirIntervalo(uint32_t ahora) {
+  bleRevisado = ahora;
+  BLEDevice central = BLE.central();
+  if (bleMediciones == 1) central.setConnectionInterval(BLE_INTERVALO_MIN_MS, BLE_INTERVALO_MAX_MS);
+  if (bleMediciones < 255) bleMediciones++;
+  int intervalo = central.getConnectionInterval();
+  if (intervalo >= 7 && intervalo <= 4000) {
+    uint32_t pausa = (uint32_t)intervalo + 1;
+    blePausa = pausa > BLE_PAUSA_MIN_MS ? pausa : BLE_PAUSA_MIN_MS;
+  }
+}
+
 void bleAtender(uint32_t ahora) {
   BLE.poll();
   bool conectado = BLE.central().connected();
@@ -466,14 +490,17 @@ void bleAtender(uint32_t ahora) {
     bleConectado = conectado;
     bleEntrada.vaciar(); bleSalida.vaciar();
     entradaBle.largo = 0; entradaBle.desbordada = false;
-    if (!conectado) BLE.advertise();                     // volver a estar visible para reconectar
+    blePausa = BLE_PAUSA_INICIAL_MS; bleMediciones = 0;
+    if (conectado) bleMedirIntervalo(ahora);
+    else BLE.advertise();                                // volver a estar visible para reconectar
   }
+  if (conectado && ahora - bleRevisado >= BLE_REVISAR_MS) bleMedirIntervalo(ahora);
   while (bleEntrada.usados() > 0) {
     char c = (char)bleEntrada.mirar(0);
     bleEntrada.descartar(1);
     recibirCaracter(entradaBle, c, salidaBle);
   }
-  if (bleSalida.usados() == 0 || ahora - bleUltimoEnvio < BLE_PAUSA_MS) return;
+  if (bleSalida.usados() == 0 || ahora - bleUltimoEnvio < blePausa) return;
   if (!bleActivo()) { bleSalida.vaciar(); return; }
   uint8_t trozo[BLE_TROZO];
   uint16_t n = bleSalida.usados() < BLE_TROZO ? bleSalida.usados() : BLE_TROZO;

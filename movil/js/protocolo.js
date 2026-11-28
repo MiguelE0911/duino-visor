@@ -78,21 +78,41 @@ export function interpretar(linea) {
   return { tipo: "OTRO", texto: linea };
 }
 
-// Lo que devuelve STATUS (las líneas STATE, sin la palabra STATE) -> {leds: {R: cfg, ...}, seq}.
-// seq es null o {nombre, vel, pausada}.
+// ¿La línea tiene una forma que la placa puede enviar? Si se pierde un trozo por el camino, dos respuestas se
+// pegan («OK LED ROK LED G») o quedan cortadas: eso se cuenta como mensaje dañado.
+export function lineaValida(linea) {
+  const led = `[${COLORES.join("")}]`;
+  const seq = Object.keys(SECUENCIAS).join("|");
+  const formas = [
+    String.raw`${PONG} \d+`,
+    String.raw`DATA T=-?\d+\.\d H=-?\d+\.\d`, "DATA ERR",
+    `OK(?: (?:LED ${led}|DHT|TERMO|SEQ|STATUS))?`,
+    "ERR [ -~]*",
+    String.raw`STATE ${led} (?:${MODOS.join("|")})(?: \d+){4}`,
+    String.raw`STATE SEQ (?:OFF|(?:${seq}) \d+ (?:RUN|PAUSA))`,
+  ];
+  return new RegExp(`^(?:${formas.join("|")})$`).test(linea.trim());
+}
+
+// Lo que devuelve STATUS (las líneas STATE, sin la palabra STATE) -> {leds: {R: cfg, ...}, seq, completo}.
+// seq es null o {nombre, vel, pausada}. Las líneas rotas se ignoran; `completo` es false si faltó algún LED o la
+// línea SEQ (se perdió un trozo por el camino): entonces no hay que fiarse de lo que falta.
 export function leerStatus(estados) {
   const leds = {};
   let seq = null;
+  let haySeq = false;
   for (const texto of estados) {
+    if (!lineaValida(`STATE ${texto.trim()}`)) continue;
     const p = texto.trim().split(/\s+/);
     if (p[0] === "SEQ") {
-      if (p[1] !== "OFF" && p.length >= 4) seq = { nombre: p[1], vel: Number(p[2]), pausada: p[3] === "PAUSA" };
-    } else if (COLORES.includes(p[0]) && p.length >= 6 && MODOS.includes(p[1])) {
+      haySeq = true;
+      if (p[1] !== "OFF") seq = { nombre: p[1], vel: Number(p[2]), pausada: p[3] === "PAUSA" };
+    } else {
       const [brillo, on_ms, off_ms, periodo_ms] = p.slice(2, 6).map(Number);
       leds[p[0]] = ledConfig(p[0], { modo: p[1], brillo, on_ms, off_ms, periodo_ms });
     }
   }
-  return { leds, seq };
+  return { leds, seq, completo: haySeq && COLORES.every((c) => c in leds) };
 }
 
 // ---------------------------------------------------------------- para mostrar

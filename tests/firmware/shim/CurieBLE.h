@@ -13,12 +13,15 @@ enum BLECharacteristicEvent { BLEWritten = 0 };
 
 extern bool shim_ble_conectado, shim_ble_suscrito;
 extern int shim_ble_anuncios;
+extern int shim_ble_intervalo;      // intervalo de conexión que «eligió» el celular (ms)
 
 // Un dispositivo BLE. Como en la librería real, BLE (la propia placa) responde connected() == false
 // siempre; solo el central (el celular, BLE.central()) dice si hay conexión.
 struct BLEDevice {
   bool esCentral = false;
   bool connected() const { return esCentral && shim_ble_conectado; }
+  int getConnectionInterval() { return shim_ble_intervalo; }
+  void setConnectionInterval(int minimo, int maximo) { printf("@%u PIDE_INTERVALO %d %d\n", shim_millis, minimo, maximo); }
 };
 struct BLECharacteristic;
 typedef void (*BLECharacteristicEventHandler)(BLEDevice, BLECharacteristic);

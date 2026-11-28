@@ -52,8 +52,19 @@ test("leer STATUS", () => {
   assert.deepEqual(Object.keys(r.leds), COLORES);
   assert.deepEqual(r.leds[c], ledConfig(c, { modo: "BLINK", brillo: 200, on_ms: 100, off_ms: 300, periodo_ms: 0 }));
   assert.equal(r.seq, null);
+  assert.equal(r.completo, true);
   r = leerStatus(["SEQ VIAL 150 PAUSA"]);
   assert.deepEqual(r.seq, { nombre: "VIAL", vel: 150, pausada: true });
+  assert.equal(r.completo, false);                             // faltan los LEDs
+});
+
+test("un STATUS con líneas perdidas o pegadas no se da por bueno", () => {
+  const estados = COLORES.map((x) => `${x} ON 9 0 0 0`);
+  assert.equal(leerStatus(estados).completo, false);           // falta la línea SEQ
+  const pegada = [`${COLORES[0]} ON 9 0 0 0STATE ${COLORES[1]} OFF 0 0 0 0`, ...estados.slice(2), "SEQ OFF"];
+  const r = leerStatus(pegada);
+  assert.equal(r.completo, false);
+  assert.ok(!(COLORES[0] in r.leds));                          // la pegada se descarta, no se lee a medias
 });
 
 test("brillo en cada instante, igual que el sketch", () => {
@@ -71,4 +82,22 @@ test("resumen para la pantalla", () => {
   assert.equal(resumenLed(ledConfig(c, { modo: "BLINK", on_ms: 500, off_ms: 500 })), "Parpadea · normal");
   assert.equal(resumenLed(ledConfig(c, { modo: "FADE", periodo_ms: 3000 })), "Respira · a medida");
   assert.equal(ritmoDe(ledConfig(c, { modo: "FADE", periodo_ms: 4000 })), "lento");
+});
+
+test("toda línea que envía la placa es válida; las pegadas o cortadas no", async () => {
+  const { PlacaSimulada } = await import("../js/simulador.js");
+  const { SECUENCIAS } = await import("../js/catalogo.js");
+  const { lineaValida } = await import("../js/protocolo.js");
+  const p = new PlacaSimulada();
+  const ordenes = ["PING", "STATUS", "HOLA", "LED", `LED ${c} ON 300`, `LED ${c} BLINK 9 100 300`, `LED ${c} FADE 9 1500`,
+    "DHT 1000", "DHT 5", "TERMO 22 28", "TERMO 3 1", "TERMO OFF", "SEQ FOO", "SEQ PAUSA", "A".repeat(70), "STATUS",
+    ...Object.keys(SECUENCIAS).flatMap((s) => [`SEQ ${s} 150`, "SEQ PAUSA", "STATUS", "SEQ SEGUIR"]), "SEQ OFF", "STATUS"];
+  const lineas = ordenes.flatMap((o, i) => p.procesar(o, i * 700));
+  for (let t = 0; t < 5000; t += 100) lineas.push(...p.tick(t));
+  assert.ok(lineas.length > 40);
+  for (const l of lineas) assert.ok(lineaValida(l), l);
+  for (const rota of [`OK LED ${c}OK LED ${c}`, `OK LED ${c}STATE ${c} ON 9 0 0 0`, `STATE ${c} ON 9 0 0`, "DATA T=24.0 H=5",
+    "OK STA", "TUS", `ATE ${c} OFF 0 0 0 0`, "PONG OAC-LEDS 1DATA T=24.0 H=51.0"]) {
+    assert.equal(lineaValida(rota), false, rota);
+  }
 });

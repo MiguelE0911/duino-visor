@@ -103,3 +103,36 @@ test("al perder la conexión se cancela todo lo pendiente", async () => {
   assert.equal(envio.ocupado, false);
   assert.equal(reloj.cuantos, 0);
 });
+
+test("tocar rápido: en la fila solo queda la última orden de cada clave", async () => {
+  const { envio, enviadas } = preparar();
+  const enCurso = envio.enviar("LED R ON 10", { clave: "LED R" });       // esta ya salió
+  const a = envio.enviar("LED R ON 20", { clave: "LED R" });
+  const otra = envio.enviar("LED G ON 5", { clave: "LED G" });
+  const b = envio.enviar("LED R ON 30", { clave: "LED R" });             // reemplaza a la de 20, en su lugar
+  await assert.rejects(a, (e) => e.codigo === "REEMPLAZADO");
+  await tic();
+  envio.recibir("OK LED R");
+  await enCurso;
+  await tic();
+  envio.recibir("OK LED R");
+  await b;
+  await tic();
+  envio.recibir("OK LED G");
+  await otra;
+  assert.deepEqual(enviadas, ["LED R ON 10", "LED R ON 30", "LED G ON 5"]);
+});
+
+test("cuenta las respuestas que no llegan", async () => {
+  const perdidas = [];
+  const reloj = relojFalso();
+  const envio = new Envio(async () => {}, { temporizador: reloj, alPerder: (o) => perdidas.push(o) });
+  const p = envio.enviar("STATUS");
+  await tic();
+  reloj.vencer();
+  await tic();
+  envio.recibir("OK STATUS");
+  await p;
+  assert.equal(envio.perdidas, 1);
+  assert.deepEqual(perdidas, ["STATUS"]);
+});

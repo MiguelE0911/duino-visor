@@ -362,3 +362,29 @@ def test_simulador_movil_responde_igual_que_el_sketch(binario):
                        capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert r.returncode == 0, r.stderr
     assert respuestas(r.stdout.splitlines()) == sketch
+
+
+def separaciones(salida):
+    tiempos = [t for t, _ in notificaciones(salida)]
+    return [b - a for a, b in zip(tiempos, tiempos[1:])]
+
+
+@pytest.mark.parametrize("intervalo,minimo", [(45, 46), (30, 31), (7, 15)])
+def test_ble_un_trozo_por_intervalo_de_conexion(binario, intervalo, minimo):
+    # La radio del 101 descarta sin avisar lo que no cabe: nunca más de un trozo por intervalo (ni cada menos de 15 ms).
+    s = correr(binario, f"ble intervalo {intervalo}", "ble on", "b> SEQ FANTASTICO", "b> STATUS", "t 1000")
+    assert len(notificaciones(s)) > 3
+    assert min(separaciones(s)) >= minimo
+    assert sin_datos(respuestas_ble(s))[-1] == "OK STATUS"           # llega todo, solo que a su ritmo
+
+
+def test_ble_se_adapta_si_el_celular_cambia_el_intervalo(binario):
+    s = correr(binario, "ble intervalo 50", "ble on", "ble intervalo 15", "t 1100", "b> STATUS", "t 500")
+    assert max(separaciones(s)) < 50                                   # ya midió el intervalo nuevo
+
+
+def test_ble_pide_un_intervalo_corto_una_vez_por_conexion(binario):
+    s = correr(binario, "ble on", "t 5000", "ble off", "ble on", "t 2000")
+    pedidos = [x for x in s if "PIDE_INTERVALO" in x]
+    assert len(pedidos) == 2
+    assert all(x.endswith("PIDE_INTERVALO 15 30") for x in pedidos)

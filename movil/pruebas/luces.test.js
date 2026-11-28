@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { COLORES, RITMOS } from "../js/catalogo.js";
-import { apagar, conBrillo, conModo, conRitmo, encender, ordenesTodas } from "../js/luces.js";
+import { apagar, conBrillo, conModo, conRitmo, encender, mismaLuz, ordenesTodas } from "../js/luces.js";
 import { comandoLed, ledConfig, leerStatus, ritmoDe } from "../js/protocolo.js";
 
 const c = COLORES[0];
@@ -58,4 +58,41 @@ test("todas a la vez", () => {
   assert.equal(encender[0], `LED ${c} BLINK 50 200 200`);
   assert.ok(encender.slice(1).every((o) => / ON 255$/.test(o)));
   assert.deepEqual(ordenesTodas(false, leds).map((o) => o.orden), COLORES.map((x) => `LED ${x} OFF`));
+});
+
+test("misma luz: se compara lo que hace, no los campos que el modo no usa", () => {
+  const pedida = conModo(ledConfig(c), "ON");                    // on_ms 500, off_ms 500, periodo 2000
+  assert.ok(mismaLuz(pedida, deStatus("ON 255 0 0 0")));          // STATUS trae 0 en esos campos
+  assert.ok(!mismaLuz(pedida, deStatus("ON 128 0 0 0")));
+  assert.ok(mismaLuz(apagar(pedida), deStatus("OFF 7 0 0 0")));   // apagada: el brillo no importa
+  assert.ok(!mismaLuz(pedida, undefined));
+});
+
+test("tras una orden de animación confirmada se sabe cómo quedó la placa, igual que con STATUS", async () => {
+  const { trasOrdenSeq } = await import("../js/luces.js");
+  const { PlacaSimulada } = await import("../js/simulador.js");
+  const { SECUENCIAS } = await import("../js/catalogo.js");
+  const placa = new PlacaSimulada();
+  const leer = () => leerStatus(placa.procesar("STATUS", 0).filter((l) => l.startsWith("STATE ")).map((l) => l.slice(6)));
+  let estado = { leds: leer().leds, seq: null };
+  const ordenes = [`LED ${c} BLINK 9 100 300`, ...Object.keys(SECUENCIAS).map((s) => `SEQ ${s} 150`), "SEQ PAUSA",
+    "SEQ SEGUIR", "SEQ OFF", "SEQ OFF", "SEQ VIAL", "SEQ OFF"];
+  for (const orden of ordenes) {
+    assert.deepEqual(placa.procesar(orden, 0).at(-1).slice(0, 2), "OK", orden);
+    if (orden.startsWith("SEQ")) estado = trasOrdenSeq(estado, orden);
+    else estado = leer();
+    const real = leer();                                     // con el tiempo detenido en 0: el primer paso
+    assert.deepEqual(estado.seq, real.seq, orden);
+    for (const x of COLORES) assert.ok(mismaLuz(estado.leds[x], real.leds[x]), `${orden} ${x}`);
+  }
+});
+
+test("desde el celular no se aceleran las animaciones", async () => {
+  const { VELOCIDADES_MOVIL, VEL_MIN } = await import("../js/catalogo.js");
+  const { comandoSeq } = await import("../js/protocolo.js");
+  assert.ok(VELOCIDADES_MOVIL.length > 0);
+  for (const [vel, texto] of VELOCIDADES_MOVIL) {
+    assert.ok(vel >= VEL_MIN && vel <= 100, `${texto}: ${vel}`);
+    assert.doesNotThrow(() => comandoSeq("VIAL", vel));       // el sketch la acepta
+  }
 });

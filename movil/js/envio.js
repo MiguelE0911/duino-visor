@@ -1,5 +1,7 @@
 // Envío con confirmación: una orden a la vez; cada una espera su OK / ERR (o PONG) antes de la siguiente,
 // con un reintento si la placa no contesta. Como ui/controladores/envio.py del escritorio.
+// Las órdenes con la misma `clave` (p. ej. la misma luz) que aún esperan turno se reemplazan por la más nueva:
+// tocar rápido no llena la fila con órdenes que ya no importan.
 // Puro: recibe la función que escribe y un temporizador, así se prueba sin Bluetooth.
 import { interpretar } from "./protocolo.js";
 
@@ -15,14 +17,16 @@ export function confirmacionDe(orden) {
 export class ErrorEnvio extends Error {
   constructor(mensaje, codigo, orden) {
     super(mensaje);
-    this.codigo = codigo; // "ERR" (la placa lo rechazó), "SIN_RESPUESTA", "ESCRITURA", "CANCELADO"
+    this.codigo = codigo; // "ERR" (la placa lo rechazó), "SIN_RESPUESTA", "ESCRITURA", "CANCELADO", "REEMPLAZADO"
     this.orden = orden;
   }
 }
 
 export class Envio {
-  constructor(escribir, { esperaMs = 2000, reintentos = 1, temporizador = temporizadorReal } = {}) {
+  constructor(escribir, { esperaMs = 1500, reintentos = 1, temporizador = temporizadorReal, alPerder = () => {} } = {}) {
     this.escribir = escribir;
+    this.alPerder = alPerder; // se llama con la orden cada vez que su respuesta no llega a tiempo
+    this.perdidas = 0;
     this.esperaMs = esperaMs;
     this.reintentos = reintentos;
     this.temporizador = temporizador;
@@ -35,9 +39,19 @@ export class Envio {
   }
 
   // Devuelve una promesa con {respuesta, estados}; `estados` son las líneas STATE (para STATUS).
-  enviar(orden) {
+  // Si ya hay en la fila (sin enviar) una orden con la misma clave, la nueva ocupa su lugar y la vieja falla
+  // con el código REEMPLAZADO.
+  enviar(orden, { clave = null } = {}) {
     return new Promise((resolver, rechazar) => {
-      this.cola.push({ orden, resolver, rechazar, intentos: 0, estados: [], espera: null });
+      const item = { orden, clave, resolver, rechazar, intentos: 0, estados: [], espera: null };
+      const i = clave === null ? -1 : this.cola.findIndex((x) => x.clave === clave);
+      if (i >= 0) {
+        const viejo = this.cola[i];
+        this.cola[i] = item;
+        viejo.rechazar(new ErrorEnvio(`«${viejo.orden}» se reemplazó por «${orden}»`, "REEMPLAZADO", viejo.orden));
+      } else {
+        this.cola.push(item);
+      }
       this._siguiente();
     });
   }
@@ -94,6 +108,8 @@ export class Envio {
   _sinRespuesta(item) {
     if (this.actual !== item) return;
     item.espera = null;
+    this.perdidas += 1;
+    this.alPerder(item.orden);
     if (item.intentos < this.reintentos) {
       item.intentos += 1;
       this._mandar(item);

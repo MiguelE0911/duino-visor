@@ -1,7 +1,7 @@
 // Pantalla «Luces»: una tarjeta por LED (interruptor, modo, brillo y ritmo) y la tarjeta «Todas a la vez»
 // (encender o apagar todas y las animaciones). Solo crea y pinta elementos: lo que pasa al tocar lo decide
 // app.js con las funciones puras de luces.js.
-import { LEDS, NOMBRES_RITMO, NOMBRES_SEQ, SECUENCIAS, VEL_MAX, VEL_MIN, ledPorId } from "../catalogo.js";
+import { LEDS, NOMBRES_RITMO, NOMBRES_SEQ, SECUENCIAS, VELOCIDADES_MOVIL, ledPorId } from "../catalogo.js";
 import { conBrillo, conModo, conRitmo, estaEncendida } from "../luces.js";
 import { porcentaje, resumenLed, ritmoDe } from "../protocolo.js";
 
@@ -32,23 +32,13 @@ function marcar(grupo, valor) {
   for (const b of grupo.querySelectorAll("[role=radio]")) b.setAttribute("aria-checked", String(b.dataset.valor === valor));
 }
 
-function textoVelocidad(vel) {
-  return vel === 100 ? "Normal" : `${vel} %`;
-}
-
-function pintarVelocidad(barra, salida, vel) {
-  barra.value = String(vel);
-  salida.textContent = textoVelocidad(vel);
-  barra.style.setProperty("--relleno", `${((vel - VEL_MIN) / (VEL_MAX - VEL_MIN)) * 100}%`);
-}
-
 // acciones: { cambiar(cfg), vistaPrevia(id, cfg|null), alternar(id), todas(encender),
 //             animacion(nombre, vel), pausar(), seguir(), detener() }
 // estado (en pintar): { cfg: {id: cfg}, enviando: {id: bool}, seq: {nombre, vel, pausada} | null }
 export function crearVistaLuces(contenedor, acciones) {
   let estado = { cfg: {}, enviando: {}, seq: null };
   let arrastrando = null; // id del LED cuyo brillo se está moviendo (no se pisa con lo que llega de la placa)
-  let velArrastrando = false;
+  let velElegida = 100; // velocidad con la que empiezan las animaciones (una de VELOCIDADES_MOVIL)
   const tarjetas = {};
 
   // ---------- una tarjeta por LED, de arriba abajo como en el semáforo
@@ -112,17 +102,14 @@ export function crearVistaLuces(contenedor, acciones) {
   btnTodasOn.addEventListener("click", () => acciones.todas(true));
   btnTodasOff.addEventListener("click", () => acciones.todas(false));
 
-  const velocidad = crear("input", { type: "range", id: "velocidad", min: String(VEL_MIN), max: String(VEL_MAX), step: "25", value: "100" });
-  const salidaVel = crear("output", { for: "velocidad", texto: "Normal" });
-  pintarVelocidad(velocidad, salidaVel, 100);
-  velocidad.addEventListener("input", () => {
-    velArrastrando = true;
-    pintarVelocidad(velocidad, salidaVel, Number(velocidad.value));
+  // Velocidad: solo tres opciones y ninguna más rápida que la normal (ver VELOCIDADES_MOVIL en catalogo.js).
+  const velocidad = segmentado("Velocidad", VELOCIDADES_MOVIL.map(([v, texto]) => [String(v), texto]), (valor) => {
+    velElegida = Number(valor);
+    marcar(velocidad, valor);
+    const seq = estado.seq;
+    if (seq && seq.vel !== velElegida) acciones.animacion(seq.nombre, velElegida);
   });
-  velocidad.addEventListener("change", () => {
-    velArrastrando = false;
-    if (estado.seq) acciones.animacion(estado.seq.nombre, Number(velocidad.value));
-  });
+  marcar(velocidad, String(velElegida));
 
   const botonesSeq = {};
   const grupoSeq = crear("div", { clase: "animaciones" });
@@ -132,7 +119,12 @@ export function crearVistaLuces(contenedor, acciones) {
       ...usados.map((c) => { const p = crear("span"); p.style.background = ledPorId(c)?.color ?? "#888"; return p; }));
     const b = crear("button", { type: "button", clase: "animacion", "aria-pressed": "false" }, puntos,
       crear("span", { texto: NOMBRES_SEQ[nombre] ?? nombre }));
-    b.addEventListener("click", () => acciones.animacion(nombre, Number(velocidad.value)));
+    b.addEventListener("click", () => {
+      const seq = estado.seq;
+      // Tocar la que ya está corriendo así no envía nada (antes la reiniciaba): menos órdenes al tocar rápido.
+      if (seq && seq.nombre === nombre && seq.vel === velElegida && !seq.pausada) return;
+      acciones.animacion(nombre, velElegida);
+    });
     botonesSeq[nombre] = b;
     grupoSeq.append(b);
   }
@@ -147,11 +139,10 @@ export function crearVistaLuces(contenedor, acciones) {
     crear("div", { clase: "fila-botones" }, btnTodasOn, btnTodasOff),
     crear("h4", { texto: "Animaciones" }),
     grupoSeq,
-    crear("div", { clase: "campo" },
-      crear("label", { clase: "campo-titulo", for: "velocidad" }, "Velocidad ", salidaVel),
-      velocidad,
-      crear("div", { clase: "extremos", "aria-hidden": "true" }, crear("span", { texto: "Más lenta" }), crear("span", { texto: "Más rápida" }))),
-    controlesSeq);
+    crear("div", { clase: "campo" }, crear("span", { clase: "campo-titulo", texto: "Velocidad" }), velocidad),
+    controlesSeq,
+    crear("p", { clase: "nota", texto: "Por Bluetooth, al cambiar de animación la placa a veces tarda unos segundos en responder. "
+      + "Si pasa, espera un momento: no hace falta volver a tocar." }));
 
   contenedor.append(lista, conjunto);
 
@@ -178,7 +169,13 @@ export function crearVistaLuces(contenedor, acciones) {
         t.avisoSeq.hidden = !seq;
       }
       for (const [nombre, b] of Object.entries(botonesSeq)) b.setAttribute("aria-pressed", String(seq?.nombre === nombre));
-      if (seq && !velArrastrando) pintarVelocidad(velocidad, salidaVel, seq.vel);
+      // Con una animación en marcha se marca su velocidad (ninguna, si se inició más rápida desde la PC).
+      if (seq) {
+        marcar(velocidad, String(seq.vel));
+        if (VELOCIDADES_MOVIL.some(([v]) => v === seq.vel)) velElegida = seq.vel;
+      } else {
+        marcar(velocidad, String(velElegida));
+      }
       controlesSeq.hidden = !seq;
       btnPausa.textContent = seq?.pausada ? "Seguir" : "Pausar";
     },

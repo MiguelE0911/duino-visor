@@ -1,6 +1,6 @@
 // Qué configuración resulta de cada gesto sobre una luz (interruptor, modo, brillo, ritmo) y las órdenes de
 // «todas a la vez». Puro: sin pantalla ni Bluetooth.
-import { COLORES, MAX_MS, MIN_BLINK_MS, MIN_FADE_MS, RITMOS } from "./catalogo.js";
+import { COLORES, MAX_MS, MIN_BLINK_MS, MIN_FADE_MS, RITMOS, SECUENCIAS } from "./catalogo.js";
 import { comandoLed, ledConfig } from "./protocolo.js";
 
 export const BRILLO_AL_ENCENDER = 255;
@@ -46,6 +46,16 @@ export function encender(cfg, recordado) {
 
 export const estaEncendida = (cfg) => cfg.modo !== "OFF";
 
+// ¿Hacen lo mismo? Se compara la orden que generan: STATUS deja valores viejos en los campos que el modo no usa.
+export function mismaLuz(a, b) {
+  if (!a || !b) return false;
+  try {
+    return comandoLed(a) === comandoLed(b);
+  } catch {
+    return false;
+  }
+}
+
 // «Encender todas»: cada una como la recordaba (o fija al máximo). «Apagar todas»: LED x OFF de cada una.
 export function ordenesTodas(encendidas, leds, recordados = {}) {
   return COLORES.map((c) => {
@@ -53,4 +63,25 @@ export function ordenesTodas(encendidas, leds, recordados = {}) {
     const cfg = encendidas ? encender(apagar(actual), recordados[c]) : apagar(actual);
     return { cfg, orden: comandoLed(cfg) };
   });
+}
+
+// Cómo queda la placa cuando confirma (OK SEQ) una orden de animación, sin preguntarle con STATUS.
+// Igual que ordenSeq() del sketch: al empezar, cada luz toma el brillo del primer paso; al detener, se apagan todas.
+// estado: {leds: {id: cfg}, seq: {nombre, vel, pausada} | null}
+export function trasOrdenSeq(estado, orden) {
+  const [, accion, velTexto] = orden.trim().toUpperCase().split(/\s+/);
+  const { leds, seq } = estado;
+  if (accion === "PAUSA" || accion === "SEGUIR") {
+    return { leds, seq: seq ? { ...seq, pausada: accion === "PAUSA" } : null };
+  }
+  if (accion === "OFF") {
+    if (!seq) return { leds, seq: null };
+    return { leds: Object.fromEntries(COLORES.map((c) => [c, apagar(leds[c] ?? ledConfig(c))])), seq: null };
+  }
+  const [, primero] = SECUENCIAS[accion][0];
+  const nuevos = Object.fromEntries(COLORES.map((c) => {
+    const b = primero[c] ?? 0;
+    return [c, { ...(leds[c] ?? ledConfig(c)), modo: b ? "ON" : "OFF", brillo: b }];
+  }));
+  return { leds: nuevos, seq: { nombre: accion, vel: velTexto ? Number(velTexto) : 100, pausada: false } };
 }

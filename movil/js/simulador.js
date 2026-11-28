@@ -2,7 +2,7 @@
 //   - PlacaSimulada: la lógica, pura (el tiempo se pasa en ms). tests/firmware/test_sketch.py comprueba que
 //     responde lo mismo que el sketch compilado.
 //   - TransporteDemo: la misma interfaz que TransporteBle (transporte.js), con la placa simulada detrás.
-import { COLORES, SECUENCIAS, VEL_MAX, VEL_MIN } from "./catalogo.js";
+import { BLE, COLORES, SECUENCIAS, VEL_MAX, VEL_MIN } from "./catalogo.js";
 import { SecuenciaLocal, ledsDeZona, zonaTermo } from "./automatismos.js";
 import { Rearmador, trozos } from "./lineas.js";
 
@@ -187,12 +187,19 @@ export class PlacaSimulada {
 
 // Transporte de mentira: misma interfaz que TransporteBle. Las respuestas pasan por los mismos trozos de
 // 20 bytes y el mismo Rearmador que por Bluetooth, con un pequeño retraso.
+// Para probar un enlace malo: `pausaMs` entrega un trozo cada tanto (como el intervalo de conexión) y `perdida`
+// (0 a 1) descarta trozos al azar, como hace la radio del 101 cuando se llena. En la app: ?pausa=30&perdida=0.1
 export class TransporteDemo {
-  constructor({ retardoMs = 40 } = {}) {
+  constructor({ retardoMs = 40, pausaMs = 0, perdida = 0, capacidad = 256 } = {}) {
     this.nombre = "Placa de demostración";
     this.alLinea = () => {};
     this.alEstado = () => {};
     this.retardoMs = retardoMs;
+    this.pausaMs = pausaMs;
+    this.perdida = perdida;
+    this.capacidad = capacidad; // como Cola<256> bleSalida del sketch: la línea que no cabe se descarta entera
+    this.salida = "";
+    this.vaciando = false;
     this.placa = null;
     this.reloj = null;
     this.t0 = 0;
@@ -227,14 +234,36 @@ export class TransporteDemo {
     }
   }
 
+  static desdeUrl(busqueda) {
+    const p = new URLSearchParams(busqueda);
+    const num = (k) => (p.has(k) ? Number(p.get(k)) || 0 : 0);
+    return new TransporteDemo({ pausaMs: num("pausa"), perdida: num("perdida") });
+  }
+
   _notificar(lineas) {
     if (!this.placa) return;
-    for (const l of lineas) for (const t of trozos(l)) this.rearmador.agregar(t);
+    for (const l of lineas) {
+      if (this.salida.length + l.length + 1 <= this.capacidad) this.salida += l + "\n";
+    }
+    if (this.vaciando) return;
+    this.vaciando = true;
+    const paso = () => {
+      if (!this.placa || this.salida.length === 0) {
+        this.vaciando = false;
+        return;
+      }
+      const t = this.salida.slice(0, BLE.trozo);
+      this.salida = this.salida.slice(BLE.trozo);
+      if (Math.random() >= this.perdida) this.rearmador.agregar(t);
+      if (this.pausaMs > 0) setTimeout(paso, this.pausaMs); else paso();
+    };
+    paso();
   }
 
   desconectar() {
     clearInterval(this.reloj);
     this.placa = null;
+    this.salida = "";
     this.entrada = "";
     this.alEstado("desconectado");
   }
