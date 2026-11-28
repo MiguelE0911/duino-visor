@@ -85,6 +85,9 @@ node --test                     # pruebas de la app (Node 18 o más nuevo)
 - **Buscar placa** abre la lista de Bluetooth del navegador: elige `DuinoVisor`. Si la señal se pierde, la app
   reintenta sola y lo avisa arriba.
 - **Probar sin placa** usa una placa simulada que responde igual que el sketch.
+- **Luces:** cada luz tiene su interruptor; al tocarla se abren el modo (fija, parpadea, respira), el brillo y
+  el ritmo. Abajo, «Todas a la vez»: encender o apagar todas y las animaciones con su velocidad, pausa y
+  detener. Cada cambio se envía al momento.
 - En **Mostrar detalles** están el registro de mensajes y un campo para enviar órdenes a mano.
 - Puede usarse a la vez que el escritorio por USB; cada uno recibe sus respuestas y los dos, las lecturas.
   La app vuelve a leer el estado de la placa cada 5 s para enterarse de los cambios hechos desde la PC.
@@ -266,7 +269,7 @@ secuencia en marcha, la app envía `SEQ OFF` antes. El semáforo térmico, en ca
 pip install -e ".[pruebas]"
 python -m pytest -q             # 175 pruebas
 ruff check duinovisor tests     # lint (reglas fijadas en pyproject.toml)
-cd movil && node --test         # 24 pruebas de la app del celular
+cd movil && node --test         # 37 pruebas de la app del celular
 ```
 
 Las pruebas de comportamiento del sketch (`tests/firmware/test_sketch.py`) compilan el `.ino` con **g++** contra un

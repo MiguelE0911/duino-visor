@@ -103,9 +103,29 @@ main { max-width: 560px; margin: 0 auto; padding: 16px; }
   background: color-mix(in srgb, var(--error) 12%, transparent); color: var(--texto);
 }
 
+.nota-error p { margin: 0; color: var(--texto); }
+.detalle-tecnico { margin-top: 6px !important; font: 12px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--texto-suave) !important; overflow-wrap: anywhere; }
+
 /* ---------- luces ---------- */
+.vista-luces { display: flex; flex-direction: column; gap: 16px; }
 .lista-luces { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
-.luz { display: flex; align-items: center; gap: 16px; }
+.luz { padding: 0; overflow: hidden; }
+.luz-cabecera { display: flex; align-items: center; gap: 8px; padding-right: 16px; }
+.luz-abrir {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 16px;
+  padding: 16px 8px 16px 20px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.luz-textos { display: flex; flex-direction: column; min-width: 0; }
+.luz-nombre { font-weight: 700; font-size: 1.05rem; }
+.luz-resumen { color: var(--texto-suave); }
+.luz.enviando .luz-resumen { color: var(--acento); }
+.chevron {
+  margin-left: auto; width: 10px; height: 10px; flex: none;
+  border-right: 2px solid var(--texto-suave); border-bottom: 2px solid var(--texto-suave);
+  transform: rotate(45deg); transition: transform .2s;
+}
+.luz-abrir[aria-expanded="true"] .chevron { transform: rotate(-135deg); }
 .bombilla {
   --color: #888; --nivel: 0;
   flex: none; width: 44px; height: 44px; border-radius: 50%;
@@ -113,12 +133,76 @@ main { max-width: 560px; margin: 0 auto; padding: 16px; }
   box-shadow: 0 0 calc(var(--nivel) * 24px) calc(var(--nivel) * 4px) color-mix(in srgb, var(--color) 70%, transparent);
   border: 2px solid color-mix(in srgb, var(--color) 60%, var(--borde));
 }
-.luz h3 { margin: 0; font-size: 1.05rem; }
-.luz p { margin: 0; color: var(--texto-suave); }
+
+/* interruptor on/off, del color de su luz */
+.interruptor {
+  --color: var(--acento);
+  flex: none; position: relative; width: 60px; height: 36px; border-radius: 999px; padding: 0;
+  border: 0; background: var(--borde); cursor: pointer; transition: background .2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.interruptor::before { content: ""; position: absolute; inset: -6px; }   /* zona de toque de 48 px */
+.interruptor .perilla {
+  position: absolute; top: 4px; left: 4px; width: 28px; height: 28px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 30%); transition: transform .2s;
+}
+.interruptor[aria-checked="true"] { background: var(--color); }
+.interruptor[aria-checked="true"] .perilla { transform: translateX(24px); }
+.interruptor:focus-visible, .luz-abrir:focus-visible, .segmentado button:focus-visible, .animacion:focus-visible {
+  outline: 3px solid var(--acento); outline-offset: 2px;
+}
+
+.luz-editor { display: flex; flex-direction: column; gap: 16px; padding: 4px 20px 20px; border-top: 1px solid var(--borde); padding-top: 16px; }
+.campo { display: flex; flex-direction: column; gap: 8px; }
+.campo-titulo { display: flex; justify-content: space-between; font-weight: 600; color: var(--texto-suave); }
+.campo-titulo output { color: var(--texto); font-variant-numeric: tabular-nums; }
+
+.segmentado { display: grid; grid-auto-columns: 1fr; grid-auto-flow: column; gap: 4px; padding: 4px; border-radius: 12px; background: var(--fondo); border: 1px solid var(--borde); }
+.segmentado button {
+  min-height: 44px; border: 0; border-radius: 9px; background: none; color: var(--texto);
+  font: inherit; font-weight: 600; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.segmentado button[aria-checked="true"] { background: var(--superficie); color: var(--acento); box-shadow: var(--sombra); }
+
+/* barra deslizante: gruesa, con el tramo lleno del color de la luz */
+input[type="range"] {
+  --color: var(--acento); --relleno: 50%;
+  -webkit-appearance: none; appearance: none; width: 100%; height: 44px; margin: 0; background: none; cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 10px; border-radius: 999px;
+  background: linear-gradient(to right, var(--color) var(--relleno), var(--borde) var(--relleno));
+}
+input[type="range"]::-moz-range-track { height: 10px; border-radius: 999px; background: var(--borde); }
+input[type="range"]::-moz-range-progress { height: 10px; border-radius: 999px; background: var(--color); }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 30px; height: 30px; margin-top: -10px; border-radius: 50%;
+  background: #fff; border: 3px solid var(--color); box-shadow: 0 1px 4px rgb(0 0 0 / 30%);
+}
+input[type="range"]::-moz-range-thumb { width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 3px solid var(--color); }
+input[type="range"]:focus-visible { outline: 3px solid var(--acento); outline-offset: 2px; border-radius: 8px; }
+
 .chip-info {
   margin: 0; align-self: flex-start; padding: 6px 12px; border-radius: 999px;
   background: color-mix(in srgb, var(--acento) 14%, transparent); font-weight: 600;
 }
+
+/* todas a la vez */
+.conjunto { display: flex; flex-direction: column; gap: 14px; }
+.conjunto h3 { margin: 0; font-size: 1.15rem; }
+.conjunto h4 { margin: 4px 0 0; font-size: 1rem; color: var(--texto-suave); }
+.fila-botones { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fila-botones .boton { padding-inline: 8px; }
+.animaciones { display: flex; flex-direction: column; gap: 8px; }
+.animacion {
+  display: flex; align-items: center; gap: 14px; min-height: 52px; padding: 10px 14px; border-radius: 12px;
+  border: 1px solid var(--borde); background: var(--fondo); color: var(--texto);
+  font: inherit; font-weight: 600; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.animacion[aria-pressed="true"] { border-color: var(--acento); background: color-mix(in srgb, var(--acento) 12%, var(--superficie)); }
+.puntos { display: inline-flex; gap: 4px; flex: none; }
+.puntos span { width: 12px; height: 12px; border-radius: 50%; }
+.extremos { display: flex; justify-content: space-between; font-size: .85rem; color: var(--texto-suave); margin-top: -6px; }
 
 /* ---------- clima ---------- */
 .clima { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

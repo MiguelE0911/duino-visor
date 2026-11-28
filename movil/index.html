@@ -37,6 +37,10 @@
         <p>Enciende el Bluetooth del celular, acerca la placa y toca <strong>Buscar placa</strong>.
           Aparecerá una lista: elige <strong>DuinoVisor</strong>.</p>
         <p id="sin-bluetooth" class="nota-error" hidden></p>
+        <div id="error-conexion" class="nota-error" role="alert" hidden>
+          <p id="error-conexion-texto"></p>
+          <p id="error-conexion-detalle" class="detalle-tecnico"></p>
+        </div>
         <button id="btn-buscar" class="boton boton-grande">Buscar placa</button>
         <button id="btn-demo" class="boton boton-secundario">Probar sin placa</button>
         <p class="nota">«Probar sin placa» usa una placa imaginaria para que veas cómo funciona.</p>
@@ -47,8 +51,8 @@
     <section id="pantalla-luces" class="pantalla" hidden>
       <h2 class="titulo-seccion">Luces</h2>
       <p id="animacion-actual" class="chip-info" hidden></p>
-      <ul id="lista-luces" class="lista-luces"></ul>
-      <p class="nota">Pronto podrás encenderlas y ajustarlas desde aquí.</p>
+      <p class="nota">Toca una luz para elegir cómo brilla. El interruptor la enciende o la apaga.</p>
+      <div id="vista-luces" class="vista-luces"></div>
     </section>
 
     <section id="pantalla-clima" class="pantalla" hidden>

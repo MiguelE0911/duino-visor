@@ -3,9 +3,11 @@
 import { LEDS, NOMBRES_SEQ } from "./catalogo.js";
 import { SecuenciaLocal } from "./automatismos.js";
 import { Envio } from "./envio.js";
-import { brilloEn, interpretar, leerStatus, resumenLed } from "./protocolo.js";
+import { apagar, encender, estaEncendida, ordenesTodas } from "./luces.js";
+import { brilloEn, comandoLed, comandoSeq, interpretar, ledConfig, leerStatus } from "./protocolo.js";
 import { TransporteDemo } from "./simulador.js";
 import { TransporteBle, motivoSinBluetooth } from "./transporte.js";
+import { crearVistaLuces } from "./vistas/luces.js";
 
 const CADA_CUANTO_STATUS_MS = 5000;
 const MAX_REGISTRO = 80;
@@ -16,11 +18,17 @@ const app = {
   transporte: null,
   envio: null,
   esDemo: false,
-  leds: {},            // lo último que dijo STATUS
-  seq: new SecuenciaLocal(),
-  statusEn: 0,         // performance.now() de ese STATUS
+  leds: {},            // lo que la placa confirmó (STATUS u OK de una orden)
+  t0: {},              // performance.now() en que cada LED empezó su configuración actual (para animarla)
+  recordados: {},      // última configuración encendida de cada LED (el interruptor la recupera)
+  pendiente: {},       // id -> {cfg, n}: enviado y esperando OK
+  previa: {},          // id -> cfg mientras se arrastra el brillo
+  contador: 0,
+  seq: new SecuenciaLocal(),   // copia local de la animación, para dibujarla
+  seqInfo: null,       // {nombre, vel, pausada} según STATUS
   lectura: null,       // {temperatura, humedad, en}
   pantalla: "luces",
+  vista: null,
 };
 
 // ---------------------------------------------------------------- conexión
@@ -45,8 +53,32 @@ function conectar(transporte, esDemo) {
   });
   transporte.alLinea = alLinea;
   transporte.alEstado = alEstado;
+  mostrarErrorConexion(null);
   // conectar() abre el selector de Bluetooth: tiene que ocurrir dentro del toque, sin esperas antes.
-  transporte.conectar().catch((e) => mostrarMensaje(e.message ?? String(e), true));
+  transporte.conectar().catch((e) => mostrarErrorConexion(e));
+}
+
+// El problema queda escrito en la tarjeta de conexión (con el detalle técnico debajo) hasta el próximo intento.
+function mostrarErrorConexion(e) {
+  $("error-conexion").hidden = !e;
+  if (!e) return;
+  $("error-conexion-texto").textContent = e.message ?? String(e);
+  $("error-conexion-detalle").textContent = e.detalle ? `Detalle técnico: ${e.detalle}` : "";
+}
+
+// ¿Está encendido el Bluetooth? Se avisa antes de tocar el botón (no todos los navegadores lo saben).
+async function vigilarBluetooth() {
+  const bt = navigator.bluetooth;
+  if (!bt?.getAvailability) return;
+  const pintar = (si) => {
+    if (motivoSinBluetooth()) return;
+    $("sin-bluetooth").hidden = si;
+    $("sin-bluetooth").textContent = "El Bluetooth del celular parece apagado. Enciéndelo para buscar la placa.";
+  };
+  try {
+    pintar(await bt.getAvailability());
+    bt.addEventListener("availabilitychanged", (ev) => pintar(ev.value));
+  } catch { /* sin información: no se avisa */ }
 }
 
 function alEstado(estado, detalle) {
@@ -89,16 +121,103 @@ async function comprobarPlaca() {
 async function leerEstado() {
   const { estados } = await app.envio.enviar("STATUS");
   const { leds, seq } = leerStatus(estados);
+  const ahora = performance.now();
+  for (const [id, cfg] of Object.entries(leds)) {
+    if (JSON.stringify(app.leds[id]) !== JSON.stringify(cfg)) app.t0[id] = ahora;
+    if (!seq && estaEncendida(cfg)) app.recordados[id] = cfg;
+  }
   app.leds = leds;
-  app.statusEn = performance.now();
   if (seq) {
-    app.seq.iniciar(seq.nombre, seq.vel, 0);
-    if (seq.pausada) app.seq.pausar(0);
+    if (!app.seq.activa || app.seq.nombre !== seq.nombre || app.seq.vel !== seq.vel) app.seq.iniciar(seq.nombre, seq.vel, ahora);
+    if (seq.pausada) app.seq.pausar(ahora); else app.seq.seguir(ahora);
   } else {
     app.seq.detener();
   }
+  app.seqInfo = seq;
   pintarLuces();
 }
+
+// Después de una orden: se vuelve a leer la placa (otras luces pueden haber cambiado, p. ej. al cortar una
+// animación). Si quedan órdenes en cola, lo hará la última.
+async function refrescar() {
+  if (app.envio && app.transporte?.conectado && !app.envio.ocupado) {
+    try { await leerEstado(); } catch { /* el próximo STATUS periódico lo arregla */ }
+  } else {
+    pintarLuces();
+  }
+}
+
+function avisarFallo(e) {
+  if (e?.codigo !== "CANCELADO") mostrarMensaje(e?.message ?? String(e), true);
+}
+
+// ---------------------------------------------------------------- acciones de la pantalla Luces
+const visible = (id) => app.previa[id] ?? app.pendiente[id]?.cfg ?? app.leds[id] ?? ledConfig(id);
+
+async function cambiarLed(cfg) {
+  if (!app.transporte?.conectado) return;
+  const id = cfg.color;
+  let orden;
+  try {
+    orden = comandoLed(cfg);
+  } catch (e) {
+    mostrarMensaje(e.message, true);
+    return;
+  }
+  const n = ++app.contador;
+  app.pendiente[id] = { cfg, n };
+  app.t0[id] = performance.now();
+  pintarLuces();
+  try {
+    await app.envio.enviar(orden);
+    app.leds[id] = cfg;                      // confirmado; una orden de LED corta animación y semáforo térmico
+    if (estaEncendida(cfg)) app.recordados[id] = cfg;
+    app.seq.detener();
+    app.seqInfo = null;
+  } catch (e) {
+    avisarFallo(e);
+  } finally {
+    if (app.pendiente[id]?.n === n) delete app.pendiente[id];
+    await refrescar();
+  }
+}
+
+async function ordenAnimacion(orden) {
+  if (!app.transporte?.conectado) return;
+  try {
+    await app.envio.enviar(orden);
+  } catch (e) {
+    avisarFallo(e);
+  } finally {
+    await refrescar();
+  }
+}
+
+const accionesLuces = {
+  cambiar: cambiarLed,
+  vistaPrevia(id, cfg) {
+    if (cfg) app.previa[id] = cfg; else delete app.previa[id];
+  },
+  alternar(id) {
+    const cfg = visible(id);
+    cambiarLed(estaEncendida(cfg) ? apagar(cfg) : encender(cfg, app.recordados[id]));
+  },
+  todas(encendidas) {
+    if (!encendidas && app.seqInfo) {
+      ordenAnimacion("SEQ OFF");               // detener la animación ya las deja apagadas
+      return;
+    }
+    const actuales = Object.fromEntries(LEDS.map((l) => [l.id, visible(l.id)]));
+    for (const { cfg } of ordenesTodas(encendidas, actuales, app.recordados)) {
+      // Una luz que ya está así no se toca (reiniciaría su parpadeo), salvo que haya que cortar una animación.
+      if (app.seqInfo || JSON.stringify(cfg) !== JSON.stringify(actuales[cfg.color])) cambiarLed(cfg);
+    }
+  },
+  animacion: (nombre, vel) => ordenAnimacion(comandoSeq(nombre, vel)),
+  pausar: () => ordenAnimacion("SEQ PAUSA"),
+  seguir: () => ordenAnimacion("SEQ SEGUIR"),
+  detener: () => ordenAnimacion("SEQ OFF"),
+};
 
 // Orden escrita en «Mostrar detalles». Después se vuelve a leer el estado para que se vea el cambio.
 async function enviarAMano(texto) {
@@ -133,8 +252,9 @@ function mostrarConectado(si) {
   $("detalles").hidden = !si;
   irA(si ? app.pantalla : null);
   if (!si) {
-    app.leds = {};
+    Object.assign(app, { leds: {}, pendiente: {}, previa: {}, seqInfo: null });
     app.seq.detener();
+    pintarLuces();
     app.lectura = null;
     pintarClima();
   }
@@ -149,40 +269,30 @@ function irA(pantalla) {
   }
 }
 
-function crearLuces() {
-  const lista = $("lista-luces");
-  lista.replaceChildren();
-  for (const led of [...LEDS].sort((a, b) => a.fila - b.fila)) {
-    const li = document.createElement("li");
-    li.className = "tarjeta luz";
-    li.innerHTML = `<span class="bombilla" aria-hidden="true"></span><div><h3></h3><p>—</p></div>`;
-    li.querySelector(".bombilla").style.setProperty("--color", led.color);
-    li.querySelector("h3").textContent = led.luz;
-    li.dataset.id = led.id;
-    lista.append(li);
-  }
-}
-
 function pintarLuces() {
-  const seq = app.seq.activa ? app.seq.nombre : null;
+  const seq = app.seqInfo;
   $("animacion-actual").hidden = !seq;
-  if (seq) $("animacion-actual").textContent = `Animación: ${NOMBRES_SEQ[seq] ?? seq}${app.seq.pausada ? " (en pausa)" : ""}`;
-  for (const li of document.querySelectorAll(".luz")) {
-    const cfg = app.leds[li.dataset.id];
-    li.querySelector("p").textContent = seq ? "La controla la animación" : cfg ? resumenLed(cfg) : "—";
+  if (seq) $("animacion-actual").textContent = `Animación: ${NOMBRES_SEQ[seq.nombre] ?? seq.nombre}${seq.pausada ? " (en pausa)" : ""}`;
+  const cfg = {}, enviando = {};
+  for (const { id } of LEDS) {
+    cfg[id] = visible(id);
+    enviando[id] = Boolean(app.pendiente[id]);
   }
+  app.vista.pintar({ cfg, enviando, seq });
 }
 
-// Brillo de cada bombilla en este instante (calculado a partir del último STATUS).
+// Brillo de cada bombilla en este instante, calculado desde lo confirmado (o lo que se está enviando).
 function animarLuces() {
   if (app.pantalla === "luces" && app.transporte?.conectado) {
-    const t = performance.now() - app.statusEn;
-    const brillos = app.seq.brillos(t);
-    for (const li of document.querySelectorAll(".luz")) {
-      const cfg = app.leds[li.dataset.id];
-      const b = brillos ? brillos[li.dataset.id] : cfg ? brilloEn(cfg, t) : 0;
-      li.querySelector(".bombilla").style.setProperty("--nivel", (b / 255).toFixed(3));
+    const ahora = performance.now();
+    const brillos = app.seq.brillos(ahora);
+    const niveles = {};
+    for (const { id } of LEDS) {
+      const propio = app.previa[id] ?? app.pendiente[id]?.cfg;
+      const b = !propio && brillos ? brillos[id] : brilloEn(visible(id), ahora - (app.t0[id] ?? ahora));
+      niveles[id] = b / 255;
     }
+    app.vista.animar(niveles);
   }
   requestAnimationFrame(animarLuces);
 }
@@ -221,12 +331,15 @@ function mostrarMensaje(texto, error = false) {
 
 // ---------------------------------------------------------------- arranque
 function iniciar() {
-  crearLuces();
+  app.vista = crearVistaLuces($("vista-luces"), accionesLuces);
+  pintarLuces();
   const motivo = motivoSinBluetooth();
   if (motivo) {
     $("sin-bluetooth").textContent = motivo;
     $("sin-bluetooth").hidden = false;
     $("btn-buscar").disabled = true;
+  } else {
+    vigilarBluetooth();
   }
   $("btn-buscar").addEventListener("click", () => conectar(new TransporteBle(), false));
   $("btn-demo").addEventListener("click", () => conectar(new TransporteDemo(), true));

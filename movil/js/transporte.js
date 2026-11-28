@@ -24,6 +24,35 @@ export function motivoSinBluetooth() {
   return null;
 }
 
+// Traduce un error de Web Bluetooth a algo que se entienda y se pueda arreglar.
+// Devuelve null si el usuario solo cerró la lista sin elegir. Ojo: Chrome usa NotFoundError tanto para eso como
+// para «Bluetooth apagado» o «sin permiso», así que hay que mirar el mensaje.
+export function explicarErrorBluetooth(e) {
+  const nombre = e?.name ?? "Error";
+  const texto = String(e?.message ?? e ?? "");
+  const detalle = `${nombre}: ${texto}`;
+  const es = (re) => re.test(texto);
+  if (nombre === "NotFoundError" && es(/cancel/i)) return null;
+  let mensaje;
+  if (es(/gesture/i)) {
+    mensaje = "El navegador no abrió la búsqueda. Toca «Buscar placa» otra vez.";
+  } else if (es(/adapter|not available|unavailable|powered|turned off/i) && !es(/location/i)) {
+    mensaje = "El Bluetooth del celular está apagado o no está disponible. Enciéndelo y vuelve a tocar «Buscar placa».";
+  } else if (es(/location/i)) {
+    mensaje = "Android pide tener la Ubicación encendida para buscar dispositivos Bluetooth. Actívala y vuelve a intentar.";
+  } else if (nombre === "NotAllowedError" || nombre === "SecurityError" || es(/permission|blocked|denied/i)) {
+    mensaje = "Chrome no tiene permiso para usar Bluetooth. En Ajustes → Aplicaciones → Chrome → Permisos, permite "
+      + "«Dispositivos cercanos» (y «Ubicación» si aparece). Después recarga esta página.";
+  } else if (es(/globally disabled|disabled/i)) {
+    mensaje = "Este navegador tiene el Bluetooth desactivado. Prueba con Chrome actualizado.";
+  } else {
+    mensaje = "No se pudo abrir la búsqueda de Bluetooth.";
+  }
+  const error = new Error(mensaje);
+  error.detalle = detalle;
+  return error;
+}
+
 export class TransporteBle {
   constructor() {
     this.alLinea = () => {};
@@ -56,8 +85,9 @@ export class TransporteBle {
       });
     } catch (e) {
       this.alEstado("desconectado");
-      if (e?.name === "NotFoundError") return false; // el usuario cerró el selector sin elegir
-      throw e;
+      const explicado = explicarErrorBluetooth(e);
+      if (explicado === null) return false; // el usuario cerró la lista sin elegir
+      throw explicado;
     }
     if (this.dispositivo && this.dispositivo !== dispositivo) this._soltar();
     this.dispositivo = dispositivo;
@@ -68,7 +98,9 @@ export class TransporteBle {
     } catch (e) {
       this._limpiarConexion();
       this.alEstado("desconectado");
-      throw new Error(`No se pudo conectar con ${this.nombre}: ${e?.message ?? e}`);
+      const error = new Error(`Se encontró ${this.nombre}, pero no se pudo conectar. Acerca el celular a la placa y vuelve a intentar.`);
+      error.detalle = `${e?.name ?? "Error"}: ${e?.message ?? e}`;
+      throw error;
     }
     return true;
   }

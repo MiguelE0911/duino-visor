@@ -1,7 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#1f6feb"/>
-  <rect x="22" y="8" width="20" height="48" rx="10" fill="#18202b"/>
-  <circle cx="32" cy="18" r="6" fill="#e5533d"/>
-  <circle cx="32" cy="32" r="6" fill="#f2c14e"/>
-  <circle cx="32" cy="46" r="6" fill="#4fbf5f"/>
+  <!-- fondo celeste -->
+  <rect width="64" height="64" rx="14" fill="#5cc8f2"/>
+  <!-- placa Arduino, sin detalle -->
+  <g>
+    <rect x="15" y="19" width="42" height="27" rx="3" fill="#00878f" stroke="#fff" stroke-width="2"/>
+    <rect x="9" y="23" width="12" height="8" rx="1" fill="#c7ced6" stroke="#fff" stroke-width="1.5"/>
+    <rect x="9" y="35" width="10" height="8" rx="1.5" fill="#1d252e" stroke="#fff" stroke-width="1.5"/>
+    <rect x="29" y="22" width="24" height="3" rx="1" fill="#1d252e"/>
+    <rect x="32" y="40" width="21" height="3" rx="1" fill="#1d252e"/>
+    <rect x="32" y="29" width="15" height="7" rx="1" fill="#1d252e"/>
+    <circle cx="25" cy="38" r="1.5" fill="#fff" opacity=".85"/>
+  </g>
 </svg>

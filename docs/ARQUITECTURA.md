@@ -122,6 +122,7 @@ contrato: `tests/firmware/` comprueba que sus tablas y su placa simulada coincid
 ```
 app.js ──► envio.js ──► protocolo.js ──► catalogo.js
    │                         ▲
+   ├──► vistas/luces.js ──► luces.js         (pantalla Luces y qué cambia cada gesto)
    ├──► transporte.js ──► lineas.js          (Bluetooth: el único módulo que lo toca)
    └──► simulador.js  ──► automatismos.js    (modo demo, con la misma interfaz que transporte.js)
 ```
@@ -130,18 +131,24 @@ app.js ──► envio.js ──► protocolo.js ──► catalogo.js
 | --- | --- | --- |
 | `catalogo.js` | LEDs, UUID BLE, límites, animaciones, zonas del semáforo térmico y ritmos (espejo de `dominio/` y del sketch) | No |
 | `protocolo.js` | Armar órdenes, interpretar respuestas, leer `STATUS`, brillo en cada instante, textos de resumen | No |
+| `luces.js` | Qué configuración resulta de cada gesto (interruptor, modo, brillo, ritmo; completa tiempos válidos porque `STATUS` da 0 en los que el modo no usa) y «todas a la vez» | No |
 | `automatismos.js` | Animaciones (`SecuenciaLocal`) y zonas del semáforo térmico | No |
 | `lineas.js` | Partir una orden en paquetes de 20 bytes y rearmar las líneas que llegan | No |
 | `envio.js` | Una orden a la vez, espera su `OK`/`ERR`/`PONG`, un reintento; recoge las líneas `STATE` | No |
 | `simulador.js` | `PlacaSimulada` (responde como el sketch) y `TransporteDemo` | No |
 | `transporte.js` | Web Bluetooth: elegir la placa, notificaciones, escribir en trozos, reconectar con esperas crecientes | Sí |
-| `app.js` | La pantalla: conexión, luces, clima, detalles y órdenes a mano | Sí |
+| `vistas/luces.js` | Crea y pinta la pantalla Luces: tarjeta por LED (interruptor, modo, brillo, ritmo) y «Todas a la vez» (encender/apagar, animaciones, velocidad, pausa) | Sí |
+| `app.js` | Conexión, estado de la placa, acciones de Luces, clima, detalles y órdenes a mano | Sí |
 
 - **Transporte intercambiable:** `TransporteBle` y `TransporteDemo` tienen la misma interfaz (`conectar`,
   `escribir`, `desconectar`, `alLinea`, `alEstado`). Para una app nativa bastaría otro transporte.
 - **Al conectar** se envía `PING` (¿es nuestra placa?) y `STATUS`; luego `STATUS` cada 5 s mientras la página
   está visible, porque el escritorio puede cambiar la placa por USB. La app **no** reinicia la placa al
   conectarse (a diferencia del escritorio, que envía `TERMO OFF`).
+- **Luces:** cada gesto se envía al momento (sin «Aplicar»). Mientras espera el `OK`, la tarjeta muestra
+  «Enviando…» y lo pedido; con el `OK` pasa a confirmado y luego se relee `STATUS`, porque una orden de LED
+  corta la animación y el semáforo térmico y cambia las demás luces. Si falla, avisa y vuelve a lo que diga la
+  placa. El interruptor recupera la última configuración encendida de esa luz.
 - **Pruebas:** `cd movil && node --test` (módulos sin navegador). `tests/firmware/test_contrato.py` compara
   `catalogo.js` con `dominio/` y los UUID con el sketch, y `test_sketch.py` envía las mismas órdenes al sketch
   compilado y a `PlacaSimulada` (con `movil/pruebas/herramientas/puente.js`). Necesitan `node`; sin él se omiten.
